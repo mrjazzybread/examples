@@ -1,0 +1,5 @@
+/proofs
+/_build
+_CoqProject
+dune-project
+rc-project.toml

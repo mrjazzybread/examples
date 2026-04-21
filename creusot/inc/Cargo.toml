@@ -1,0 +1,10 @@
+[package]
+name = "inc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+creusot-std = "0.11.0-dev"
+
+[patch.crates-io]
+creusot-std = { path = "/home/tiago/phd/creusot/creusot-std" }
