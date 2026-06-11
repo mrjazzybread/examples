@@ -1,0 +1,18 @@
+(lang dune 3.0)
+
+(name hashtbl)
+
+(package
+  (name hashtbl)
+  (synopsis "epic")
+  (depends
+    zoo
+    zoo_std
+  )
+)
+
+(package
+  (name rocq-hashtbl)
+  (synopsis "Zoo demo")
+  (allow_empty)
+)

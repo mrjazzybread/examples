@@ -1,0 +1,9 @@
+(library
+  (name hashtbl)
+  (public_name hashtbl)
+  (libraries
+    zoo
+    zoo_std
+  )
+  (flags (:standard -open Zoo_std))
+)
