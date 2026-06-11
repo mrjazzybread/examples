@@ -41,3 +41,13 @@ Definition hashtbl٠add' : val :=
     let: "n" := array٠size "arr" in
     let: "i" := hashtbl٠index "k" "n" in
     array٠set "arr" "i" ‘Cons( "k", "v", array٠get "arr" "i" ).
+
+Definition hashtbl٠bucket_iter_right : val :=
+  rec: "bucket_iter_right" "b" "f" =>
+    match: "b" with
+    | Nil =>
+        ()
+    | Cons "k" "v" "b'" =>
+        "bucket_iter_right" "b'" "f" ;;
+        "f" "k" "v"
+    end.

@@ -708,19 +708,94 @@ Proof.
   assert (len r = len l).
   { rewrite H3. unfold tbl_to_val. by list. }
   repeat iSplit; iPureIntro; list; try done.
-  - apply list_eq_same_length'_total.
+  - simpl. rewrite stdpp_buffer.expand_singleton.
+    apply list_eq_same_length'_total.
     + unfold tbl_to_val. by list.
     + intros. rewrite list_lookup_total_fmap;
         list in *; try lia; simpl.
       destruct (decide (r0 = i)); list.
-      { simpl. rewrite stdpp_buffer.expand_singleton.
-        repeat f_equal. rewrite H3.
+      { simpl. repeat f_equal. rewrite H3.
         by rewrite list_lookup_total_fmap; try lia. }
       { rewrite H3. by rewrite list_lookup_total_fmap; try lia. }
   - apply no_garbage_insert; eauto. subst. by list.
   - apply valid_buckets_insert; auto.
     subst. unfold tbl_to_val. by list.
 Qed.
+
+Definition FOLD {A}
+  (permitted : list A -> Prop)
+  (complete : list A -> Prop)
+  (init : val)
+  (body : val -> expr)
+  (loop : val -> A -> expr)
+  (S : iProp)
+  :=
+  ∀ inv,
+    (∀ (x : A) (h1 : list A) (h2 : list A) (acc : val),
+       {{{ inv h1 acc ∗ ⌜ h2 = h1 ++ [x] ⌝ ∗ ⌜ permitted h2 ⌝ }}}
+       loop acc x
+       {{{ acc', RET acc'; inv h2 acc' }}}) -∗
+  {{{ inv [] init ∗ ⌜ permitted [] ⌝ ∗ S }}}
+    body init
+  {{{ r, RET r; ∃ h, inv h r ∗ ⌜ complete h ⌝ ∗ S }}}.
+
+Definition ITER {A}
+   (permitted : list A -> Prop)
+   (complete : list A -> Prop)
+   (body : expr)
+   (loop : A -> expr)
+   (S : iProp)
+   :=
+   FOLD permitted complete ()%V (λ _, body) (λ _, loop) S .
+
+Parameter hashtbl٠iter : val.
+
+Lemma bucket_iter_right_spec (_b : val) b (f : val) :
+  ITER (λ h, h `prefix_of` reverse b)
+    (λ h, h = reverse b)
+    (hashtbl٠bucket_iter_right _b f)
+    (λ (x : K * val), let (k, v) := x in f (Key k) v)
+    (⌜ bucket_to_val b = _b ⌝).
+Proof.
+  intros.
+  unfold ITER, FOLD.
+  iIntros "%inv #f_spec".
+  iModIntro.
+  iInduction b as [|[k v] b] "IH" forall (_b); simpl in *;
+  iIntros "%ϕ (Hinv & _ & %Hbucket) Hϕ";
+  wp_rec; subst; wp_pures.
+  - iApply "Hϕ". eauto.
+  - wp_apply+ ("IH" with "[] [Hinv]").
+    + iModIntro. iIntros.
+      iModIntro. iIntros "% (Hinv' & % & %) ?".
+      wp_apply+ ("f_spec" with "[Hinv']"); auto.
+      iFrame. iSplit; auto. rewrite reverse_cons.
+      iPureIntro. by apply prefix_app_r.
+    + iFrame. iSplit; eauto. iPureIntro. apply prefix_nil.
+    + iIntros "%r (%h & Inv & [%Hcomplete _])".
+      wp_pure. iSpecialize ("f_spec" $! (k, v)).
+      wp_apply ("f_spec" with "[Inv]").
+      { iFrame. iSplit; eauto.
+        rewrite reverse_cons.
+        by subst. }
+      iIntros.
+      iApply "Hϕ".
+      iExists _. repeat iSplit; eauto.
+      simpl. rewrite reverse_cons. by subst.
+Qed.
+
+Lemma iter (h f : val) (m : hmap) :
+  ITER (permitted m)
+    (complete m)
+    (Hashtbl h m)
+    (λ x, let (k, v) := x in f k v)
+    (hashtbl٠iter h)
+    .
+Proof.
+  unfold ITER, FOLD.
+  iIntros. iModIntro.
+  iIntros. destruct x as [k v].
+Admitted.
 
 Lemma remove_spec h m k :
   {{{ Hashtbl h m }}}
@@ -750,47 +825,4 @@ Lemma find_opt h m k :
   {{{ _r, RET _r; ∃ (r : option val),
           Option _r r ∗ Hashtbl h m ∗ ⌜ head (m !!! k) = r ⌝ }}}.
 Proof.
-Admitted.
-
-Definition FOLD {A}
-  (permitted : list A -> iProp)
-  (complete : list A -> iProp)
-  (body : expr)
-  (loop : val -> A -> expr)
-  (S : iProp)
-  :=
-  ∀ inv (h1 : list A) (h2 : list A) (acc : val) (x : A),
-    {{{ inv h1 acc ∗ ⌜ h2 = h1 ++ [x] ⌝ ∗ permitted h2 }}}
-      loop acc x
-    {{{ acc', RET acc'; inv h2 acc' }}} -∗
-  ∀ (init : val),
-  {{{ inv [] init ∗ permitted [] ∗ S }}}
-    body
-  {{{ r, RET r; ∃ h, inv h r ∗ complete h ∗ S }}}.
-
-Definition ITER {A}
-   (permitted : list A -> iProp)
-   (complete : list A -> iProp)
-   (S : iProp)
-   (loop : A -> expr)
-   (body : expr)
-   :=
-   FOLD permitted complete body (λ _, loop) S.
-
-Parameter permitted : hmap -> bucket -> iProp.
-Parameter complete : hmap -> bucket -> iProp.
-
-Parameter hashtbl٠iter : val.
-
-Lemma iter (h f : val) (m : hmap) :
-  ITER (permitted m)
-    (complete m)
-    (Hashtbl h m)
-    (λ x, let (k, v) := x in f k v)
-    (hashtbl٠iter h)
-    .
-Proof.
-  unfold ITER, FOLD.
-  iIntros. iModIntro.
-  iIntros. destruct x as [k v].
 Admitted.

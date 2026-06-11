@@ -34,3 +34,10 @@ let add' (arr : (('k, 'v) bucket) array) (k : 'k) (v : 'v) =
   let n = Array.size arr in
   let i = index k n in
   arr.(i) <- Cons(k, v, arr.(i))
+
+let rec bucket_iter_right (b : ('k, 'v) bucket) f : unit =
+  match b with
+  |Nil -> ()
+  |Cons(k, v, b') ->
+    bucket_iter_right b' f;
+    f k v
