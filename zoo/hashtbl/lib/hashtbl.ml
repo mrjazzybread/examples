@@ -41,3 +41,8 @@ let rec bucket_iter_right (b : ('k, 'v) bucket) f : unit =
   |Cons(k, v, b') ->
     bucket_iter_right b' f;
     f k v
+
+let iter (h : ('k, 'v) t) f =
+  for i = 0 to Array.size h.buckets - 1 do
+    bucket_iter_right h.buckets.(i) f
+  done

@@ -51,3 +51,9 @@ Definition hashtbl٠bucket_iter_right : val :=
         "bucket_iter_right" "b'" "f" ;;
         "f" "k" "v"
     end.
+
+Definition hashtbl٠iter : val :=
+  fun: "h" "f" =>
+    for: "i" := 0 to array٠size "h".{buckets} begin
+      hashtbl٠bucket_iter_right (array٠get "h".{buckets} "i") "f"
+    end.
