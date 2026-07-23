@@ -52,8 +52,21 @@ Definition hashtbl٠bucket_iter_right : val :=
         "f" "k" "v"
     end.
 
+Definition hashtbl٠iter_aux : val :=
+  fun: "buckets" "f" =>
+    for: "i" := 0 to array٠size "buckets" begin
+      hashtbl٠bucket_iter_right (array٠get "buckets" "i") "f"
+    end.
+
 Definition hashtbl٠iter : val :=
   fun: "h" "f" =>
-    for: "i" := 0 to array٠size "h".{buckets} begin
-      hashtbl٠bucket_iter_right (array٠get "h".{buckets} "i") "f"
-    end.
+    hashtbl٠iter_aux "h".{buckets} "f".
+
+Definition hashtbl٠resize : val :=
+  fun: "h" =>
+    let: "len" := array٠size "h".{buckets} * 2 in
+    let: "new_buckets" := array٠make "len" §Nil in
+    hashtbl٠iter_aux
+      "h".{buckets}
+      (fun: "k" "v" =>
+         array٠set "new_buckets" (hashtbl٠index "k" "len") "v").

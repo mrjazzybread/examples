@@ -194,6 +194,9 @@ Proof.
   lia.
 Qed.
 
+Hint Resolve
+  indexZ_range : zarith.
+
 (* Relates a list of buckets to a finite map of keys to lists of
    values, where [n] is the length of the [tbl].  For every key [k],
    [m !!! k] returns the list of values mapped to [k] in [tbl].
@@ -643,8 +646,20 @@ Lemma array٠get𑁒spec t (i : Z) dq vs v :
 Proof.
 Admitted.
 
-Ltac destructHashtblArray :=
-  iDestruct "S" as "(% & % & % & Harray & (%Htbl & % & % & % & %))".
+Lemma tbl_to_val_len vs tbl :
+  vs = tbl_to_val tbl ->
+  len vs = len tbl.
+Proof.
+  intros ->. unfold tbl_to_val. by list.
+Qed.
+
+Ltac destructHashtblArray H :=
+  iDestruct H as "(% & % & % & Harray & (%Htbl & % & % & % & %))";
+  match goal with h: ?vs = tbl_to_val ?tbl |- _ =>
+     pose (tbl_to_val_len vs tbl h);
+     pose (length_nonneg vs);
+     pose (length_nonneg tbl)
+  end.
 
 Lemma add'_spec h m k v :
      {{{ HashtblArray h m }}}
@@ -653,10 +668,9 @@ Lemma add'_spec h m k v :
 Proof.
   iIntros "%ϕ S Hϕ".
   wp_rec.
-  destructHashtblArray.
+  destructHashtblArray "S".
   wp_apply+ (array٠size𑁒spec with "Harray") as "Harray".
   wp_pures.
-  pose (length_nonneg v0).
   wp_apply+ (hashtbl٠index_spec).
   { iPureIntro. lia. }
   iIntros.
@@ -666,20 +680,15 @@ Proof.
   iApply "Hϕ".
   iFrame.
   iExists (<[r:=(k, v) :: tbl !!! r]> tbl), _.
-  assert (len tbl = len v0).
-  { rewrite Htbl. unfold tbl_to_val. by list. }
-  repeat iSplit; iPureIntro; list; try done.
-  - simpl. rewrite stdpp_buffer.expand_singleton.
-    apply list_eq_same_length'_total.
-    + unfold tbl_to_val. by list.
-    + intros. rewrite list_lookup_total_fmap;
-        list in *; try lia; simpl.
-      destruct (decide (r = i)); list.
-      { simpl. repeat f_equal. rewrite Htbl.
-        by rewrite list_lookup_total_fmap; try lia. }
-      { rewrite Htbl. by rewrite list_lookup_total_fmap; try lia. }
+  repeat iSplit; iPureIntro; list; eauto with lia.
+  - apply list_eq_same_length'_total. 1: by list.
+    intros. rewrite list_lookup_total_fmap;
+      list in *; try lia; simpl.
+    destruct (decide (r = i)); list;
+      rewrite Htbl; simpl; repeat f_equal;
+      by rewrite list_lookup_total_fmap; try lia.
   - apply no_garbage_insert; eauto. subst. by list.
-  - apply valid_buckets_insert; auto.
+  - apply valid_buckets_insert; auto with lia.
     subst. unfold tbl_to_val. by list.
 Qed.
 
@@ -768,9 +777,8 @@ Definition inv_array_unreached n (m : hmap) :=
     (forall k v,
         indexZ k n >= i → (k, v) ∉ h).
 
-Definition inv_array inv larr arr (l : list val) m (_ : Z) i : iProp :=
+Definition inv_array inv arr (l : list val) m (_ : Z) i : iProp :=
   ∃ h, inv h ∗
-         larr.[buckets] ↦ arr ∗
          array_model arr (DfracOwn 1) l ∗
          ⌜ inv_array_reached (len l) m h i ⌝ ∗
          ⌜ inv_array_unreached (len l) m h i ⌝.
@@ -900,143 +908,119 @@ Proof.
       intro Hnin. apply NG in Hnin; lia. }
 Qed.
 
-Lemma iter (h f : val) (m : hmap) :
+Hint Resolve not_elem_of_nil : rlist.
+Ltac rlist := auto with rlist.
+
+
+Ltac intro_iter :=
+  unfold ITER, FOLD;
+  iIntros "%inv #f_spec !> %ϕ
+           (Hinv & %Hpermitted & S) Hϕ".
+
+Hint Rewrite
+  @list_lookup_alt : clist.
+
+Lemma iter_aux_spec (arr f : val) (m : hmap) :
+  ITER (permitted m)
+    (complete m)
+    (HashtblArray arr m)
+    (hashtbl٠iter_aux arr f)
+    (λ x, let (k, v) := x in f (Key k) v).
+Proof.
+  intro_iter.
+  wp_rec. wp_pures.
+  destructHashtblArray "S".
+  wp_apply+ (array٠size𑁒spec with "Harray") as "Harray".
+  wp_apply+ (for𑁒spec (inv_array inv arr v m) 0 (len v) with "[Hinv Harray]"). 1: auto. iSplit.
+  (* The invariant holds at the start of iteration *)
+  + iFrame. iPureIntro. split; auto; intros ?**; rlist.
+    pose (hash_nonneg k). lia.
+  + iIntros "!> % % % %". unfold inv_array.
+    iIntros "(%h & Hinv & Harray & (% & %Hunreached))".
+    wp_pures. wp_apply+ (array٠get𑁒spec with "[Harray]").
+    { iFrame. iIntros. rewrite list_lookup_alt. by list. }
+    iIntros "(% & Harray)".
+    (* When applying the spec for [bucket_iter_right], we must prove:
+       - The correctness of the nested triple.  This is a persistent
+         statement meaning that it does not require any resources
+       - The precondition of the triple.  This requires assertion [Hinv], the loop invariant.
+       - The post condition of the function.  This requires assertion
+         [Harray], the ownership of the array. *)
+    (* We apply [bucket_iter_right_spec] with the model of the bucket
+       we are iterating over and the proper invariant. *)
+    iApply (bucket_iter_right_spec _
+              (tbl !!! i) _ (inv_bucket m h inv) with "[] [Hinv] [Harray]").
+    (* The correctness of the triple *)
+    { iIntros "%%%!>%ϕ' (Hinv & % & %) Hϕ".
+      iDestruct ("Hinv" $! (h ++ h1) with "[%//]")
+        as "[Hinv %]".
+      wp_apply ("f_spec" with "[Hinv]").
+      + iFrame. iSplit; eauto.
+        iPureIntro. list. destruct x.
+        eapply permitted_add_next; eauto; subst.
+        1, 3: by length in *.
+        intros. apply filter_key_nin.
+        intros. apply Hunreached.
+        by length.
+      + list. iIntros.
+        iApply "Hϕ". unfold inv_bucket.
+        iIntros. subst. iFrame.
+        iPureIntro. destruct x.
+        eapply permitted_add_next; eauto. 1: lia.
+        intros. apply filter_key_nin. intros.
+        apply Hunreached. by length. }
+    (* The precondition of [bucket_iter_right] *)
+    { unfold inv_bucket. repeat iSplit.
+      - list. iIntros. subst h'. iFrame. iPureIntro.
+        eapply permitted_start_next; eauto.
+      - iPureIntro. apply prefix_nil.
+      - iPureIntro. subst v.
+        unfold tbl_to_val.
+        rewrite list_lookup_total_fmap;
+          repeat f_equal; lia. }
+    (* The invariant is maintained while iterating over each bucket. *)
+    { iIntros "!> (%h' & H1 & % & %)".
+      iSplit. 1: auto. iFrame.
+      iDestruct ("H1" with "[//]") as "[H1 %]".
+      iFrame. iSplit; iPureIntro.
+      - subst h'.
+        eapply inv_array_reached_preserve;
+          eauto with f_equal; try lia; subst;
+          by length.
+      - intros ?**. rewrite not_elem_of_app. split.
+        + apply Hunreached. lia.
+        + subst h'.
+          rewrite elem_of_reverse.
+          intros Hnin. subst.
+          apply H1 in Hnin; try lia.
+          length in *. lia. }
+  (* The post condition holds after iteration is complete. *)
+  + iIntros "(%h & ? & ? & % & %)". iApply "Hϕ".
+    iFrame. repeat iSplit; iPureIntro; auto.
+    - intro. apply H3. lia.
+    - pack; eauto; subst; by length.
+Qed.
+
+Ltac destructHashtbl H :=
+  set (x := ("(%larr & %arr & %H1 & H2 & " ++ H ++ ")")%string);
+  iDestruct H as x;
+  destructHashtblArray H.
+
+Lemma iter_spec h (f : val) m :
   ITER (permitted m)
     (complete m)
     (Hashtbl h m)
     (hashtbl٠iter h f)
     (λ x, let (k, v) := x in f (Key k) v).
 Proof.
-  unfold ITER, FOLD.
+  unfold ITER.
   iIntros "%inv #f_spec !> %ϕ
            (Hinv & %Hpermitted &
-           (%larr & %arr & %H1 & H2 & S)) Hϕ".
-  iIntros. wp_rec. wp_pures.
-  subst h. wp_load.
-  destructHashtblArray.
-  pose (length_nonneg v).
-  wp_apply+ (array٠size𑁒spec with "Harray") as "Harray".
-  wp_apply+ (for𑁒spec (inv_array inv larr arr v m) 0 (len v) with "[Hinv H2 Harray]").
-  1: auto. iSplit.
-  (* The invariant holds at the start of iteration *)
-  + iNext. iFrame. iPureIntro. split.
-    { intro k. pose (hash_nonneg k). lia. }
-    { intros ?**. apply not_elem_of_nil. }
-  + iIntros "!> % % % %".
-    unfold inv_array.
-    iIntros "(%h & H1 & H2 & H3 & (% & %))".
-    wp_pures. wp_load.
-    wp_apply+ (array٠get𑁒spec with "[H3]").
-    { iFrame. iPureIntro. intros. rewrite list_lookup_alt. split; auto. }
-    iIntros "(% & H5)".
-    (* When applying the spec for [bucket_iter_right], we must prove:
-       - The correctness of the nested triple.  This is a persistent
-         statement meaning that it does not require any resources
-       - The precondition of the triple.  This requires assertion [H1], the loop invariant.
-       - The post condition of the function.  This requires assertion
-         [H2], the ownership of the array, and assertion [H5], the
-         ownership of the record field containing the array. *)
-    assert (A: len v = len tbl).
-    { rewrite Htbl. unfold tbl_to_val. by list. }
-    wp_apply+ (bucket_iter_right_spec with "[] [H1] [H2 H5]").
-    (* The correctness of the triple *)
-    { (* TODO figure out if there is a way to remove this Unshelve. *)
-      Unshelve. 2: apply (tbl !!! i).
-      2: apply (inv_bucket m h inv).
-      iIntros "%%%!>%ϕ' (Hinv & % & %) Hϕ".
-      iDestruct ("Hinv" $! (h ++ h1) with "[%//]")
-        as "[H1 %]".
-      wp_apply ("f_spec" with "[H1]").
-      + unfold inv_bucket.
-        repeat iSplit; eauto.
-        iPureIntro.
-        list. destruct x.
-        assert (valid i tbl). { rewrite <- A. lia. }
-        eapply permitted_add_next; eauto.
-        { intros. apply filter_key_nin.
-          intros. apply H6. subst n.
-          rewrite A. lia. }
-        { by rewrite <- H8. }
-      + list. rewrite <- H8.
-        iIntros.
-        iApply "Hϕ". unfold inv_bucket.
-        iIntros. subst. iFrame.
-        iPureIntro. destruct x.
-        eapply permitted_add_next; eauto.
-        { rewrite <- A. lia. }
-        { intros. apply filter_key_nin. intros.
-          apply H6. rewrite A. lia. }
-    }
-    (* The precondition of [bucket_iter_right] *)
-    { unfold inv_bucket. repeat iSplit.
-      - list. iIntros. subst h'. iFrame. iPureIntro.
-        eapply permitted_start_next; eauto.
-      - iPureIntro. apply prefix_nil.
-      - iPureIntro. rewrite Htbl.
-        unfold tbl_to_val.
-        rewrite list_lookup_total_fmap; auto.
-        by rewrite <- A. }
-    (* The invariant is maintained while iterating over each bucket. *)
-    { iNext. iIntros "(%h' & H1 & % & %)".
-      iSplit. 1: auto. iNext. iFrame.
-      iDestruct ("H1" with "[//]") as "[H1 %]".
-      iFrame. iSplit; iPureIntro.
-      - subst h'.
-        eapply inv_array_reached_preserve; eauto; try lia.
-        + rewrite <- A. lia.
-        + rewrite A. by subst n.
-        + rewrite A. by subst n.
-        + by f_equal.
-      - intros ?**. rewrite not_elem_of_app. split.
-        + apply H6. lia.
-        + subst h'.
-          rewrite elem_of_reverse.
-          intros Hnin.
-          unfold no_garbage in *.
-          subst n.
-          apply H1 in Hnin; try lia.
-          rewrite <- A in Hnin. lia.
-    }
-  (* The post condition holds after iteration is complete. *)
-  + unfold inv_array.
-    iIntros "(%h & ? & ? & ? & % & %)". iApply "Hϕ".
-    iFrame. repeat iSplit; iPureIntro; auto.
-    - assert (len tbl = len v).
-      { rewrite Htbl. unfold tbl_to_val. by list. }
-      intro.
-      apply H3. rewrite Z2Nat.id. lia.
-      rewrite Z.sub_0_r.
-      apply indexZ_range.
-      rewrite <- H5. lia.
-    - by pack.
+           %larr & %arr & %H1 & H2 & S) Hϕ".
+  subst h. wp_rec.
+  wp_load.
+  wp_apply+ (iter_aux_spec with "[] [Hinv S]").
+  1, 2: by iFrame. iIntros "(% & ? & ? & ?)".
+  iApply "Hϕ". iExists h. by iFrame.
 Qed.
 
-Lemma remove_spec h m k :
-  {{{ Hashtbl h m }}}
-    hashtbl٠remove h k
-  {{{ RET (); Hashtbl h (rm m k)}}}.
-Proof.
-Admitted.
-
-Definition Option _o o : iProp :=
-  ⌜ option_to_val o = _o ⌝.
-
-Lemma find_opt' h m k :
-  {{{ Hashtbl h m }}}
-    hashtbl٠find_opt h k
-  {{{ v, RET v; Hashtbl h m ∗ ⌜ v = head (m !!! k) ⌝ }}}.
-Proof.
-Admitted.
-
-Fail Lemma find_opt_fail h m k :
-  {{{ Hashtbl h m }}}
-    hashtbl٠remove h k
-  {{{ v, RET v; Hashtbl h m ∗ ⌜ head (m !!! k) = v ⌝ }}}.
-
-Lemma find_opt h m k :
-  {{{ Hashtbl h m }}}
-    hashtbl٠find_opt h k
-  {{{ _r, RET _r; ∃ (r : option val),
-          Option _r r ∗ Hashtbl h m ∗ ⌜ head (m !!! k) = r ⌝ }}}.
-Proof.
-Admitted.
