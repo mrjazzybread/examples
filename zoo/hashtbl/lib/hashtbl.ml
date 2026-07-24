@@ -43,4 +43,6 @@ let iter (h : ('k, 'v) t) f = iter_aux h.buckets f
 let resize (h : ('k, 'v) t) =
   let len = Array.size h.buckets * 2 in
   let new_buckets = Array.make len Nil in
-  iter_aux h.buckets (fun k v -> new_buckets.(index k len) <- v)
+  iter_aux h.buckets (fun k v -> add' new_buckets k v)
+
+let add (h : ('k, 'v) t) (k : 'k) (v : 'v) =

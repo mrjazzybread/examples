@@ -1024,3 +1024,66 @@ Proof.
   iApply "Hϕ". iExists h. by iFrame.
 Qed.
 
+(* Invariant for [resize] *)
+Definition resize_inv new_arr (h : list (K * val)) : iProp :=
+  ∃ m,
+    HashtblArray new_arr m ∗
+      ⌜ ∀ k, map snd (filter_key k h) = reverse (m !!! k) ⌝.
+
+Ltac eq_decide v1 v2 := destruct (decide (v1 = v2)).
+
+Lemma resize_inv_step :
+  forall k v k' (l : list (K * val)) b x,
+    (∀ k, map snd (filter_key k b) = reverse (x !!! k)) ->
+    l = (filter_key k' (b ++ [(k, v)])) ->
+    map snd l = reverse (_add x k v !!! k').
+Proof.
+  intros k v k' l **.
+  subst l.
+  rewrite filter_app.
+  eq_decide k k'.
+  { subst. rewrite add_lookup_eq.
+    rewrite reverse_cons.
+    rewrite map_app. filter. simpl. by f_equal. }
+  { rewrite add_lookup_neq; auto. filter. by list. }
+Qed.
+
+Ltac iPack :=
+  repeat (try iSplit; (try iExists _)).
+
+Lemma resize_spec (h : val) m :
+  {{{ Hashtbl h m }}}
+    hashtbl٠resize h
+  {{{ RET (); Hashtbl h m }}}.
+Proof.
+  intro ϕ.
+  iIntros "S Hϕ".
+  wp_rec. destructHashtbl "S".
+  subst h. wp_load.
+  wp_apply (array٠size𑁒spec with "[Harray //]").
+  iIntros "Harray". wp_pures. wp_apply (array٠make_spec).
+  { iPureIntro. lia. }
+  iIntros "%new_arr Hnew". wp_pures.
+  wp_load. iApply (iter_aux_spec _ _ m (resize_inv new_arr) with "[] [$Harray $Hnew]").
+  - assert (n = len v). { lia. }
+    clear dependent tbl ϕ.
+    iIntros "%kv %h1 %h2 !> %ϕ ((% & S & %) & % & %) Hϕ".
+    destruct kv. wp_pures. wp_apply (add'_spec with "[$S]").
+    iIntros. iApply "Hϕ".
+    iFrame. auto.
+    iPureIntro. intros. eapply resize_inv_step; subst; eauto.
+  - iPack; iPureIntro.
+    1: apply replicate_model.
+    11: eauto.
+    all: eauto.
+    + length. lia.
+    + intros ????. do 2 list in *. intro Helem.
+      by apply not_elem_of_nil in Helem.
+    + intros ?**. do 2 list in *. erewrite lookup_total_empty.
+      by subst.
+    + intros. filter.
+      by rewrite lookup_total_empty.
+    + intro. filter. apply prefix_nil.
+  - iIntros "!> (% & ? & ? & ?)".
+    iApply "Hϕ". by iFrame.
+Qed.

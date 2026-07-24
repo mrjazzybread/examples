@@ -68,5 +68,4 @@ Definition hashtbl٠resize : val :=
     let: "new_buckets" := array٠make "len" §Nil in
     hashtbl٠iter_aux
       "h".{buckets}
-      (fun: "k" "v" =>
-         array٠set "new_buckets" (hashtbl٠index "k" "len") "v").
+      (fun: "k" "v" => hashtbl٠add' "new_buckets" "k" "v").
