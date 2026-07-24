@@ -18,20 +18,6 @@ Definition hashtbl٠index : val :=
   fun: "k" "n" =>
     hashtbl٠hash "k" `rem` "n".
 
-Definition hashtbl٠remove_assoc : val :=
-  rec: "remove_assoc" "k" "b" =>
-    match: "b" with
-    | Nil =>
-        (false, §Nil)
-    | Cons "k'" "v" "t" =>
-        if: hashtbl٠eq "k'" "k" then (
-          (true, "t")
-        ) else (
-          let: "r", "t" := "remove_assoc" "k" "t" in
-          ("r", ‘Cons( "k'", "v", "t" ))
-        )
-    end.
-
 Definition hashtbl٠create : val :=
   fun: "n" =>
     { array٠make "n" §Nil, 0 }.
@@ -58,7 +44,7 @@ Definition hashtbl٠iter_aux : val :=
       hashtbl٠bucket_iter_right (array٠get "buckets" "i") "f"
     end.
 
-Definition hashtbl٠iter : val :=
+Definition hashtbl٠iter_rev : val :=
   fun: "h" "f" =>
     hashtbl٠iter_aux "h".{buckets} "f".
 
@@ -68,4 +54,23 @@ Definition hashtbl٠resize : val :=
     let: "new_buckets" := array٠make "len" §Nil in
     hashtbl٠iter_aux
       "h".{buckets}
-      (fun: "k" "v" => hashtbl٠add' "new_buckets" "k" "v").
+      (fun: "k" "v" => hashtbl٠add' "new_buckets" "k" "v") ;;
+    "h" <-{buckets} "new_buckets".
+
+Definition hashtbl٠population : val :=
+  fun: "h" =>
+    "h".{size}.
+
+Definition hashtbl٠inc_pop : val :=
+  fun: "h" =>
+    "h" <-{size} "h".{size} + 1 ;;
+    let: "pop" := hashtbl٠population "h" in
+    let: "cap" := array٠size "h".{buckets} * 2 in
+    if: "pop" > "cap" then (
+      hashtbl٠resize "h"
+    ).
+
+Definition hashtbl٠add : val :=
+  fun: "h" "k" "v" =>
+    hashtbl٠add' "h".{buckets} "k" "v" ;;
+    hashtbl٠inc_pop "h".

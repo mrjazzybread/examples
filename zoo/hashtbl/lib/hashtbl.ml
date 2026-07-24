@@ -3,22 +3,14 @@ let[@zoo.opaque] hash _ = assert false
 
 type ('k, 'v) bucket = Nil | Cons of 'k * 'v * ('k, 'v) bucket
 
-type ('k, 'v) t = {
+type ('k, 'v) tbl = {
   mutable buckets : ('k, 'v) bucket array;
   mutable size : int;
 }
 
+type ('k, 'v) t = ('k, 'v) tbl
+
 let index k n = hash k mod n
-
-let rec remove_assoc (k : 'k) (b : ('k, 'v) bucket) =
-  match b with
-  | Nil -> (false, Nil)
-  | Cons (k', v, t) ->
-      if eq k' k then (true, t)
-      else
-        let r, t = remove_assoc k t in
-        (r, Cons (k', v, t))
-
 let create (n : int) = { buckets = Array.make n Nil; size = 0 }
 
 let add' (arr : ('k, 'v) bucket array) (k : 'k) (v : 'v) =
@@ -38,11 +30,22 @@ let iter_aux (buckets : ('k, 'v) bucket array) f =
     bucket_iter_right buckets.(i) f
   done
 
-let iter (h : ('k, 'v) t) f = iter_aux h.buckets f
+let iter_rev (h : ('k, 'v) tbl) f = iter_aux h.buckets f
 
-let resize (h : ('k, 'v) t) =
+let resize (h : ('k, 'v) tbl) =
   let len = Array.size h.buckets * 2 in
   let new_buckets = Array.make len Nil in
-  iter_aux h.buckets (fun k v -> add' new_buckets k v)
+  iter_aux h.buckets (fun k v -> add' new_buckets k v);
+  h.buckets <- new_buckets
 
-let add (h : ('k, 'v) t) (k : 'k) (v : 'v) =
+let population (h : ('k, 'v) tbl) = h.size
+
+let inc_pop (h : ('k, 'v) tbl) =
+  h.size <- h.size + 1;
+  let pop = population h in
+  let cap = Array.size h.buckets * 2 in
+  if pop > cap then resize h
+
+let add (h : ('k, 'v) tbl) (k : 'k) (v : 'v) =
+  add' h.buckets k v;
+  inc_pop h

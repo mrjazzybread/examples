@@ -506,8 +506,9 @@ Definition HashtblArray (h : val) (m : hmap) : iProp :=
            ⌜ no_garbage n tbl ⌝ ∗ ⌜ valid_buckets n tbl m ⌝.
 
 Definition Hashtbl (h : val) (m : hmap) : iProp :=
-  ∃ l arr,
-    ⌜ h = #l ⌝ ∗ l.[buckets] ↦ arr ∗ HashtblArray arr m.
+  ∃ l arr (c : Z),
+    ⌜ h = #l ⌝ ∗ l.[buckets] ↦ arr ∗ HashtblArray arr m
+  ∗ l.[size] ↦ #c ∗ ⌜ c = cardinality m ⌝.
 
 Lemma replicate_model (n : Z) :
   replicate n (§Nil)%V = tbl_to_val (replicate n []).
@@ -533,6 +534,9 @@ Ltac pack :=
       eexists
   end.
 
+Ltac iPack :=
+  repeat (try iSplit; (try iExists _)); try iPureIntro.
+
 Lemma create_spec (n : Z) :
     {{{ ⌜ 0 < n ⌝ }}}
       hashtbl٠create #n
@@ -547,8 +551,7 @@ Proof.
   iUnfold Hashtbl;
   iExists l. do 2 iStep.
   unfold HashtblArray. iModIntro.
-  iFrame. iExists _, _.
-  repeat iSplit; iPureIntro; list; eauto.
+  iFrame. iPack; eauto.
   - by rewrite replicate_model.
   - by list.
   - unfold no_garbage. intros ???? H3.
@@ -1001,27 +1004,22 @@ Proof.
     - pack; eauto; subst; by length.
 Qed.
 
-Ltac destructHashtbl H :=
-  set (x := ("(%larr & %arr & %H1 & H2 & " ++ H ++ ")")%string);
-  iDestruct H as x;
-  destructHashtblArray H.
-
-Lemma iter_spec h (f : val) m :
+Lemma iter_rev_spec h (f : val) m :
   ITER (permitted m)
     (complete m)
     (Hashtbl h m)
-    (hashtbl٠iter h f)
+    (hashtbl٠iter_rev h f)
     (λ x, let (k, v) := x in f (Key k) v).
 Proof.
   unfold ITER.
   iIntros "%inv #f_spec !> %ϕ
            (Hinv & %Hpermitted &
-           %larr & %arr & %H1 & H2 & S) Hϕ".
+           %lh & %arr & %card & %H1 & ? & S & ? & ?) Hϕ".
   subst h. wp_rec.
   wp_load.
-  wp_apply+ (iter_aux_spec with "[] [Hinv S]").
-  1, 2: by iFrame. iIntros "(% & ? & ? & ?)".
-  iApply "Hϕ". iExists h. by iFrame.
+  wp_apply+ (iter_aux_spec with "[] [Hinv S]"); try (by iFrame).
+  iIntros "(% & ? & ? & ?)".
+  iApply "Hϕ". iPack. by iFrame.
 Qed.
 
 (* Invariant for [resize] *)
@@ -1048,8 +1046,35 @@ Proof.
   { rewrite add_lookup_neq; auto. filter. by list. }
 Qed.
 
-Ltac iPack :=
-  repeat (try iSplit; (try iExists _)).
+Ltac destructHashtbl H :=
+  set (x := ("(%lh & %arr & %card & %H1 & H2 & " ++ H ++ " & H3 & %)")%string);
+  iDestruct H as x;
+  destructHashtblArray H.
+
+Lemma hashtbl_extensionality h m1 m2 :
+  ⌜∀ k, m1 !!! k = m2 !!! k⌝ -∗
+  Hashtbl h m1 -∗
+  Hashtbl h m2.
+Proof.
+  iIntros "%Helts S".
+  destructHashtbl "S".
+  unfold Hashtbl. iPack; eauto; iFrame.
+  iPack. 2: apply H0. all: eauto.
+  + unfold valid_buckets. intros.
+    rewrite <- Helts. eauto.
+  + by erewrite cardinality_extensionality.
+Qed.
+
+Lemma reverse_injective :
+  forall A (l1 : list A) (l2 : list A),
+    reverse l1 = reverse l2 ->
+    l1 = l2.
+Proof.
+  intros.
+  rewrite <- reverse_involutive.
+  rewrite <- reverse_involutive with (l:=l1).
+  auto with f_equal.
+Qed.
 
 Lemma resize_spec (h : val) m :
   {{{ Hashtbl h m }}}
@@ -1064,7 +1089,8 @@ Proof.
   iIntros "Harray". wp_pures. wp_apply (array٠make_spec).
   { iPureIntro. lia. }
   iIntros "%new_arr Hnew". wp_pures.
-  wp_load. iApply (iter_aux_spec _ _ m (resize_inv new_arr) with "[] [$Harray $Hnew]").
+  wp_load.
+  wp_apply+ (iter_aux_spec _ _ m (resize_inv new_arr) with "[] [$Harray $Hnew] [H2 H3 Hϕ]").
   - assert (n = len v). { lia. }
     clear dependent tbl ϕ.
     iIntros "%kv %h1 %h2 !> %ϕ ((% & S & %) & % & %) Hϕ".
@@ -1072,9 +1098,9 @@ Proof.
     iIntros. iApply "Hϕ".
     iFrame. auto.
     iPureIntro. intros. eapply resize_inv_step; subst; eauto.
-  - iPack; iPureIntro.
+  - iPack.
     1: apply replicate_model.
-    11: eauto.
+    11: eauto. (* Try to find a way around this. *)
     all: eauto.
     + length. lia.
     + intros ????. do 2 list in *. intro Helem.
@@ -1084,6 +1110,66 @@ Proof.
     + intros. filter.
       by rewrite lookup_total_empty.
     + intro. filter. apply prefix_nil.
-  - iIntros "!> (% & ? & ? & ?)".
-    iApply "Hϕ". by iFrame.
+  - iIntros "!> (% & (%m' & ? & %) & %Hcomplete & ?)".
+    wp_store. iStep.
+    assert (A : ∀ k : K, m !!! k = m' !!! k).
+    { intro k. apply reverse_injective.
+      by rewrite <- Hcomplete. }
+    iApply (hashtbl_extensionality _ m' m); auto.
+    do 2 iStep. iFrame. by erewrite cardinality_extensionality.
 Qed.
+
+Lemma hashtbl٠population_spec h m :
+  {{{ Hashtbl h m }}}
+    hashtbl٠population h
+  {{{ (c : Z), RET #c; Hashtbl h m ∗ ⌜ c = cardinality m ⌝ }}}.
+Proof.
+  iIntros "%ϕ S Hϕ".
+  destructHashtbl "S".
+  wp_rec. subst h. wp_load. iModIntro.
+  iSpecialize ("Hϕ" $! card). iApply "Hϕ".
+  iFrame. iPack. 5: eauto. all: eauto.
+Qed.
+
+Lemma hashtbl٠inc_pop_spec h l (arr : val) m (card : Z) :
+  {{{ ⌜ h = #l ⌝ ∗ l.[size] ↦ #card ∗ l.[buckets] ↦ arr ∗
+        HashtblArray arr m ∗
+        ⌜ card = cardinality m - 1 ⌝ }}}
+    hashtbl٠inc_pop h
+   {{{ RET (); Hashtbl h m }}}.
+Proof.
+  iIntros "%ϕ (% & pop & buck & S & %) ?".
+  wp_rec. subst h. wp_load. wp_store.
+  wp_apply+ (hashtbl٠population_spec with "[$S $pop $buck]")
+    as "%c (S & %)".
+  { iSplit; auto. iPureIntro. lia. }
+  subst card. clear arr.
+  destructHashtbl "S".
+  rewrite H1. wp_load.
+  wp_apply (array٠size𑁒spec with "[$Harray]") as "Harray".
+  wp_pures. destruct bool_decide; wp_pures.
+  unfold Hashtbl.
+  + wp_apply (resize_spec with "[H2 H3 Harray]").
+    { iFrame. iPack. 6:eauto. all: eauto. }
+    iSteps.
+  + iStep. iFrame. iPack. pack. 6:eauto. all: eauto.
+Qed.
+
+Lemma hashtbl٠add_spec h m k v :
+  {{{ Hashtbl h m }}}
+    hashtbl٠add h (Key k) v
+  {{{ RET (); Hashtbl h (_add m k v) }}}.
+Proof.
+  iIntros "%ϕ (% & % & % & % & Harr & S & Hsize & %) Hϕ". subst h.
+  wp_rec. wp_pures. wp_load.
+  wp_apply+ (add'_spec with "[$S]").
+  iIntros "S". wp_pures.
+  wp_apply+ ((hashtbl٠inc_pop_spec _ l arr _) with "[Harr Hsize S]").
+  { iStep. iFrame. erewrite cardinality_add; eauto.
+    subst c.
+    assert (A : cardinality m = cardinality m + 1 - 1). { lia. }
+    by rewrite <- A. }
+  iApply "Hϕ".
+Qed.
+
+End spec.

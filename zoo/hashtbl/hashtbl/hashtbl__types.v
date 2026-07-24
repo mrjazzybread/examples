@@ -18,10 +18,10 @@ Notation "'Cons'" := (
 ).
 
 Notation "'buckets'" := (
-  in_type "hashtbl.hashtbl.t" 0
+  in_type "hashtbl.hashtbl.tbl" 0
 )(in custom zoo_field
 ).
 Notation "'size'" := (
-  in_type "hashtbl.hashtbl.t" 1
+  in_type "hashtbl.hashtbl.tbl" 1
 )(in custom zoo_field
 ).
