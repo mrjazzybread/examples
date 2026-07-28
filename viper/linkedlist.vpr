@@ -2,31 +2,26 @@ field val : Int
 field next: Ref
 
 predicate list(l : Ref){
-  l != null && acc(l.next) && acc(l.val) && 
-  (l.next != null ==> list(l.next))
+  l != null ==> 
+    (acc(l.next) && acc(l.val) && list(l.next))
 }
 
 function model(l : Ref) : Seq[Int]
 requires list(l) {
   unfolding list(l) in 
-    l.next == null ? Seq(l.val) : Seq(l.val) ++ model(l.next)
+     l == null ? Seq() : Seq(l.val) ++ model(l.next)
 }
 
 method append(l1 : Ref, l2 : Ref) 
-requires list(l1) && list(l2)
-ensures list(l1)
+requires l1 != null && list(l1) && list(l2)
+ensures l1 != null && list(l1)
 ensures model(l1) == old (model(l1) ++ model(l2)) {
   unfold list(l1);
   if(l1.next != null){
       append(l1.next, l2);
   } else {
-      fold list(l1);
-      assert model(l1) == unfolding list(l1) in Seq(l1.val);
-      unfold list(l1);
+      assert (Seq() == model(l1.next)); 
       l1.next := l2;
-      fold list(l1);
-      assert model(l1) == unfolding list(l1) in Seq(l1.val) ++ model(l2);
-      unfold list(l1);
   }
   fold list(l1);
 }

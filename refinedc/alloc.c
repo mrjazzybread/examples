@@ -1,18 +1,16 @@
-#include <stdio.h>
+#include <stddef.h>
 
 typedef struct
-  [[rc::refined_by("xs : {list Z}")]]
-  [[rc::typedef("list_t : {xs <> []} @ optional<&own<...>, null>")]]
-  [[rc::exists("y : Z", "ys : {list Z}")]]
-  [[rc::constraints("{xs = y :: ys}")]]
+  [[rc::refined_by("l : {list Z}")]]
+  [[rc::typedef("list_t : {maybe2 cons l} @ optionalO<λ (ty, l). &own<...>, null>")]]
 list_node {
-  [[rc::field("y @ int<i32>")]]
+  [[rc::field("int<i32>")]]
   int val;
-  [[rc::field("ys @ list_t")]]
+  [[rc::field("l @ list_t")]]
   struct list_node *next;
 } *list_t;
 
-[[rc::parameters("p : loc", "xs : {list Z}", "ys : {list Z}")]]
+[[rc::parameters("p : loc", "q : loc", "xs : {list Z}")]]
 [[rc::args("p @ &own<xs @ list_t>", "ys @ list_t")]]
 [[rc::ensures("own p : {xs ++ ys} @ list_t")]]
 void append(list_t *l, list_t k) {
