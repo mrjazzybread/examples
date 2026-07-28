@@ -17,6 +17,19 @@ Notation "'Cons'" := (
 )(in custom zoo_tag
 ).
 
+Notation "'key'" := (
+  in_type "hashtbl.hashtbl.bucket.Cons" 0
+)(in custom zoo_field
+).
+Notation "'data'" := (
+  in_type "hashtbl.hashtbl.bucket.Cons" 1
+)(in custom zoo_field
+).
+Notation "'next'" := (
+  in_type "hashtbl.hashtbl.bucket.Cons" 2
+)(in custom zoo_field
+).
+
 Notation "'buckets'" := (
   in_type "hashtbl.hashtbl.tbl" 0
 )(in custom zoo_field

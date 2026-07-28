@@ -39,13 +39,16 @@ Notation hmap := (gmap K (list val)).
 
 Definition bucket := (list (K * val)).
 
-Fixpoint bucket_to_val (b : bucket) : val :=
+Implicit Types ℓ : location.
+
+Fixpoint Bucket (_b : val) (b : bucket) : iProp :=
   match b with
-  | nil => §Nil
-  | cons v t =>
-      let (k, v) := v in
-      ‘Cons( Key k, v , (bucket_to_val t))
-  end%V.
+  |[] => ⌜ _b = §Nil%V ⌝
+  |cons x t =>
+     let (k, v) := x in
+     ∃ ℓ _t, ⌜ _b = #ℓ ⌝ ∗ ℓ ↦ₕ Header §Cons 3 ∗ ℓ.[key] ↦ Key k ∗
+          ℓ.[data] ↦ v ∗ ℓ.[next] ↦ _t ∗ Bucket _t t
+  end.
 
 Fixpoint remove_assoc (k : K) (l : bucket) :=
   match l with
@@ -493,29 +496,34 @@ Proof.
        by hmap in HLookup. }
 Qed.
 
-Implicit Types l : location.
 Implicit Types _k _v : val.
 
-Notation tbl_to_val tbl :=
-  (fmap bucket_to_val tbl).
+Fixpoint Tbl vs l : iProp :=
+  match l with
+  |[] => ⌜ vs = [] ⌝
+  |b :: t => ∃ _b xs,
+    ⌜ vs = _b :: xs ⌝ ∗ Bucket _b b ∗ Tbl xs t
+end.
 
 Definition HashtblArray (h : val) (m : hmap) : iProp :=
   ∃ (v : list val) tbl n, array_model h (DfracOwn 1) v ∗
-           ⌜ v = tbl_to_val tbl ⌝ ∗
+           Tbl v tbl ∗
            ⌜ n = len tbl ⌝ ∗ ⌜0 < n⌝%Z ∗
            ⌜ no_garbage n tbl ⌝ ∗ ⌜ valid_buckets n tbl m ⌝.
 
 Definition Hashtbl (h : val) (m : hmap) : iProp :=
-  ∃ l arr (c : Z),
-    ⌜ h = #l ⌝ ∗ l.[buckets] ↦ arr ∗ HashtblArray arr m
-  ∗ l.[size] ↦ #c ∗ ⌜ c = cardinality m ⌝.
+  ∃ ℓ arr (c : Z),
+    ⌜ h = #ℓ ⌝ ∗ ℓ.[buckets] ↦ arr ∗ HashtblArray arr m
+  ∗ ℓ.[size] ↦ #c ∗ ⌜ c = cardinality m ⌝.
+
+Ltac iPack :=
+  repeat (try iSplit; (try iExists _)); try iPureIntro.
 
 Lemma replicate_model (n : Z) :
-  replicate n (§Nil)%V = tbl_to_val (replicate n []).
+  True -∗
+  Tbl (replicate n (§Nil)%V) (replicate n []).
 Proof.
-  unfold tbl_to_val.
-  by list.
-Qed.
+Admitted.
 
 Lemma array٠make_spec sz v :
   {{{ ⌜0 ≤ sz⌝%Z }}}
@@ -534,9 +542,6 @@ Ltac pack :=
       eexists
   end.
 
-Ltac iPack :=
-  repeat (try iSplit; (try iExists _)); try iPureIntro.
-
 Lemma create_spec (n : Z) :
     {{{ ⌜ 0 < n ⌝ }}}
       hashtbl٠create #n
@@ -552,7 +557,7 @@ Proof.
   iExists l. do 2 iStep.
   unfold HashtblArray. iModIntro.
   iFrame. iPack; eauto.
-  - by rewrite replicate_model.
+  - by iApply replicate_model.
   - by list.
   - unfold no_garbage. intros ???? H3.
       do 2 list in *.
@@ -649,20 +654,90 @@ Lemma array٠get𑁒spec t (i : Z) dq vs v :
 Proof.
 Admitted.
 
-Lemma tbl_to_val_len vs tbl :
-  vs = tbl_to_val tbl ->
-  len vs = len tbl.
+Lemma Tbl_len vs tbl :
+  Tbl vs tbl -∗
+    Tbl vs tbl ∗ ⌜ len vs = len tbl ⌝.
 Proof.
-  intros ->. unfold tbl_to_val. by list.
+  iIntros "Tbl". iInduction tbl as [|h t Ih] forall (vs); simpl Tbl.
+  + iDestruct "Tbl" as "%". by subst.
+  + iDestruct "Tbl" as "(% & % & % & ? & Tbl)".
+    subst. length.
+    iSpecialize ("Ih" $! xs).
+    iApply "Ih" in "Tbl".
+    iDestruct "Tbl" as "(? & <-)".
+    by iFrame.
 Qed.
 
 Ltac destructHashtblArray H :=
-  iDestruct H as "(% & % & % & Harray & (%Htbl & % & % & % & %))";
-  match goal with h: ?vs = tbl_to_val ?tbl |- _ =>
-     pose (tbl_to_val_len vs tbl h);
-     pose (length_nonneg vs);
-     pose (length_nonneg tbl)
-  end.
+  iDestruct H as "(%vs & %tbl & % & Harray & (Htbl & % & % & % & %))".
+
+Lemma listz_insert_cons_r {A} (i : Z) l (x : A) y:
+  (0 < i) → <[i:=x]> (y :: l) = y :: <[(i - 1):=x]> l.
+Proof.
+  intros.
+  unfold insert, list_insert, listz_insert.
+  rewrite decide_False; try lia.
+  rewrite insert_cons_r; try lia.
+  destruct decide; repeat f_equal; lia.
+Qed.
+
+Lemma Tbl_peek _tbl tbl b i :
+    Tbl _tbl tbl -∗
+    ⌜ b = tbl !!! i ⌝ -∗
+    ⌜ valid i _tbl ⌝ -∗
+    (Bucket (_tbl !!! i) b ∗
+       (Bucket (_tbl !!! i) b -∗ Tbl _tbl tbl)).
+Proof.
+  iIntros "Htbl Hb Hv".
+  iPoseProof (Tbl_len _tbl tbl with "Htbl") as "[Htbl %H]".
+  rewrite H. clear H.
+  iInduction tbl as [|x t Ih] forall (i b _tbl);
+    iDestruct "Hb" as "%"; iDestruct "Hv" as "%";
+    length in *; try lia.
+  iSimpl in "Htbl".
+  iDestruct "Htbl" as "(% & % & % & ? & ?)".
+  subst _tbl.
+  destruct (decide (i = 0)).
+  - subst i b.
+    do 2 rewrite lookup_total_cons_eq_0.
+    iFrame. iIntros. by iFrame.
+  - iDestruct ("Ih" with "[] [] [$]") as "[Hb Htail]".
+    + iPureIntro.
+      by rewrite lookup_total_cons_ne_0 in H.
+    + iPureIntro. lia.
+    + subst b. do 2 (rewrite lookup_total_cons_ne_0; try lia).
+      iFrame. iIntros.
+      simpl. iFrame. iExists _. iSplit; eauto. by iStep.
+Qed.
+
+Lemma insert_Tbl vs tbl ℓ k v b i :
+  ⌜ valid i vs ⌝ -∗
+  ⌜ b = tbl !!! i ⌝ -∗
+  Tbl vs tbl -∗
+  ℓ.[key] ↦ Key k -∗
+  ℓ.[data] ↦ v -∗
+  ℓ.[next] ↦ (vs !!! i) -∗
+  ℓ ↦ₕ Header §Cons 3 -∗
+  Tbl (<[i:=#ℓ]> vs) (<[i:=(k, v) :: b]> tbl).
+Proof.
+  iIntros "Hv Hb Htbl ? ? Hnext ?".
+  iInduction tbl as [|x t Ih] forall (i b vs);
+    iDestruct "Hv" as "%"; iDestruct "Hb" as "%".
+  - length in *. iDestruct "Htbl" as "%".
+    subst. by do 2 (rewrite list_insert_ge; try (length; lia)).
+  - destruct (decide (i = 0)).
+    { subst. simpl. iFrame.
+      iDestruct "Htbl" as "(% & % & % & ? & ?)".
+      subst vs. iFrame. iExists _. repeat iSplit; eauto. }
+    simpl. iDestruct "Htbl" as "(% & % & -> & ? & Htbl)".
+    do 2 (rewrite listz_insert_cons_r; try lia).
+    simpl. iFrame.
+    iExists _. iSplit; eauto.
+    iApply ("Ih" with "[] [] [$] [$] [$] [Hnext] [$]").
+    + iPureIntro. length in *. lia.
+    + by rewrite lookup_total_cons_ne_0 in H0; try lia.
+    + by rewrite lookup_total_cons_ne_0; try lia.
+Qed.
 
 Lemma add'_spec h m k v :
      {{{ HashtblArray h m }}}
@@ -672,6 +747,7 @@ Proof.
   iIntros "%ϕ S Hϕ".
   wp_rec.
   destructHashtblArray "S".
+  iPoseProof (Tbl_len vs tbl with "Htbl") as "[Htbl %]".
   wp_apply+ (array٠size𑁒spec with "Harray") as "Harray".
   wp_pures.
   wp_apply+ (hashtbl٠index_spec).
@@ -679,20 +755,15 @@ Proof.
   iIntros.
   wp_pures. wp_apply+ (array٠get𑁒spec with "[Harray]") as "[% Harray]".
   { iFrame. iPureIntro. intros. rewrite list_lookup_alt. split; auto. }
+  iSteps. iModIntro.
   wp_apply+ (array٠set𑁒spec with "Harray") as "Harray".
-  iApply "Hϕ".
-  iFrame.
+  iApply "Hϕ". iFrame.
   iExists (<[r:=(k, v) :: tbl !!! r]> tbl), _.
-  repeat iSplit; iPureIntro; list; eauto with lia.
-  - apply list_eq_same_length'_total. 1: by list.
-    intros. rewrite list_lookup_total_fmap;
-      list in *; try lia; simpl.
-    destruct (decide (r = i)); list;
-      rewrite Htbl; simpl; repeat f_equal;
-      by rewrite list_lookup_total_fmap; try lia.
-  - apply no_garbage_insert; eauto. subst. by list.
+  iPack; list; eauto with lia.
+  - iApply (insert_Tbl with "[//] [//] [$] [$] [$] [$] [$]").
+  - apply no_garbage_insert; eauto. subst. rewrite H3. by list.
   - apply valid_buckets_insert; auto with lia.
-    subst. unfold tbl_to_val. by list.
+    subst. by rewrite H3.
 Qed.
 
 Definition FOLD {A}
@@ -731,7 +802,7 @@ Definition ITER {A}
 Lemma bucket_iter_right_spec (_b : val) b (f : val) :
   ITER (λ h, h `prefix_of` reverse b)
     (λ h, h = reverse b)
-    (⌜ bucket_to_val b = _b ⌝)
+    (Bucket _b b)
     (hashtbl٠bucket_iter_right _b f)
     (λ (x : K * val), let (k, v) := x in f (Key k) v).
 Proof.
@@ -740,26 +811,32 @@ Proof.
   iIntros "%inv #f_spec".
   iModIntro.
   iInduction b as [|[k v] b] "IH" forall (_b); simpl in *;
-  iIntros "%ϕ (Hinv & _ & %Hbucket) Hϕ";
+  iIntros "%ϕ (Hinv & _ & Hbucket) Hϕ";
   wp_rec; subst; wp_pures.
-  - iApply "Hϕ". eauto.
-  - wp_apply+ ("IH" with "[] [Hinv]").
+  - iDestruct "Hbucket" as "%". subst.
+    wp_pures. iApply "Hϕ". eauto.
+  - iDestruct "Hbucket" as "(% & % & % & ? & ? & ? & ? & Hb)".
+    subst. do 3 iStep. iIntros "!> _". wp_load.
+    wp_apply+ ("IH" with "[] [Hinv $Hb] ").
     + iIntros "!>**!>% (Hinv' & % & %) ?".
       wp_apply+ ("f_spec" with "[Hinv']"). 2: auto.
-      iFrame. iSplit; auto. rewrite reverse_cons.
-      iPureIntro. by apply prefix_app_r.
-    + iFrame. iSplit; eauto.
+      iFrame. rewrite reverse_cons.
+      iSplit; auto.
+      iPureIntro.
+      by apply prefix_app_r.
+    + iFrame.
       iPureIntro. apply prefix_nil.
-    + iIntros "(%h & Inv & [%Hcomplete _])".
+    + iIntros "(%h & Inv & [%Hcomplete ?])".
       wp_pure. iSpecialize ("f_spec" $! (k, v)).
+      do 2 wp_load.
       wp_apply ("f_spec" with "[Inv]").
       { iFrame. iSplit; eauto.
         rewrite reverse_cons.
         by subst. }
       iIntros.
-      iApply "Hϕ".
-      iExists _. repeat iSplit; eauto.
-      simpl. rewrite reverse_cons. by subst.
+      iApply "Hϕ". iFrame.
+      repeat iSplit; eauto. iFrame.
+      rewrite reverse_cons. by subst.
 Qed.
 
 Definition complete_key (k : K) (xs : hmap) (history : list (K * val)) :=
@@ -780,9 +857,10 @@ Definition inv_array_unreached n (m : hmap) :=
     (forall k v,
         indexZ k n >= i → (k, v) ∉ h).
 
-Definition inv_array inv arr (l : list val) m (_ : Z) i : iProp :=
+Definition inv_array inv arr (l : list val) tbl m (_ : Z) i : iProp :=
   ∃ h, inv h ∗
          array_model arr (DfracOwn 1) l ∗
+         Tbl l tbl ∗
          ⌜ inv_array_reached (len l) m h i ⌝ ∗
          ⌜ inv_array_unreached (len l) m h i ⌝.
 
@@ -934,12 +1012,13 @@ Proof.
   wp_rec. wp_pures.
   destructHashtblArray "S".
   wp_apply+ (array٠size𑁒spec with "Harray") as "Harray".
-  wp_apply+ (for𑁒spec (inv_array inv arr v m) 0 (len v) with "[Hinv Harray]"). 1: auto. iSplit.
+  iPoseProof (Tbl_len vs tbl with "Htbl") as "[Htbl %]".
+  wp_apply+ (for𑁒spec (inv_array inv arr vs tbl m) 0 (len vs) with "[Hinv Harray Htbl]"). 1: lia. iSplit.
   (* The invariant holds at the start of iteration *)
   + iFrame. iPureIntro. split; auto; intros ?**; rlist.
     pose (hash_nonneg k). lia.
-  + iIntros "!> % % % %". unfold inv_array.
-    iIntros "(%h & Hinv & Harray & (% & %Hunreached))".
+  + iIntros "!> % % % %".
+    iIntros "(%h & Hinv & Harray & Htbl & (% & %Hunreached))".
     wp_pures. wp_apply+ (array٠get𑁒spec with "[Harray]").
     { iFrame. iIntros. rewrite list_lookup_alt. by list. }
     iIntros "(% & Harray)".
@@ -951,8 +1030,10 @@ Proof.
          [Harray], the ownership of the array. *)
     (* We apply [bucket_iter_right_spec] with the model of the bucket
        we are iterating over and the proper invariant. *)
+    iDestruct (Tbl_peek vs tbl (tbl !!! i) i with "[$] [//] [//]")
+      as "[B Htbl]".
     iApply (bucket_iter_right_spec _
-              (tbl !!! i) _ (inv_bucket m h inv) with "[] [Hinv] [Harray]").
+              (tbl !!! i) _ (inv_bucket m h inv) with "[] [Hinv B] [Harray Htbl]").
     (* The correctness of the triple *)
     { iIntros "%%%!>%ϕ' (Hinv & % & %) Hϕ".
       iDestruct ("Hinv" $! (h ++ h1) with "[%//]")
@@ -960,48 +1041,47 @@ Proof.
       wp_apply ("f_spec" with "[Hinv]").
       + iFrame. iSplit; eauto.
         iPureIntro. list. destruct x.
-        eapply permitted_add_next; eauto; subst.
-        1, 3: by length in *.
+        eapply permitted_add_next; eauto.
+        3: rewrite <- H8. all: eauto.
+        { lia. }
         intros. apply filter_key_nin.
         intros. apply Hunreached.
-        by length.
+        rewrite H3. subst. lia.
       + list. iIntros.
         iApply "Hϕ". unfold inv_bucket.
         iIntros. subst. iFrame.
         iPureIntro. destruct x.
         eapply permitted_add_next; eauto. 1: lia.
         intros. apply filter_key_nin. intros.
-        apply Hunreached. by length. }
+        apply Hunreached. rewrite H3. by length. }
     (* The precondition of [bucket_iter_right] *)
-    { unfold inv_bucket. repeat iSplit.
-      - list. iIntros. subst h'. iFrame. iPureIntro.
-        eapply permitted_start_next; eauto.
-      - iPureIntro. apply prefix_nil.
-      - iPureIntro. subst v.
-        unfold tbl_to_val.
-        rewrite list_lookup_total_fmap;
-          repeat f_equal; lia. }
+    { unfold inv_bucket.
+      - list. iFrame. iSplit.
+        2: { iPureIntro. apply prefix_nil. }
+        iIntros. subst h'.
+        iFrame. iPureIntro.
+        eapply permitted_start_next; eauto. }
     (* The invariant is maintained while iterating over each bucket. *)
-    { iIntros "!> (%h' & H1 & % & %)".
-      iSplit. 1: auto. iFrame.
+    { iIntros "!> (%h' & H1 & % & ?)".
+      iSplit. 1: auto.
+      iDestruct ("Htbl" with "[$]") as "?". iFrame.
       iDestruct ("H1" with "[//]") as "[H1 %]".
       iFrame. iSplit; iPureIntro.
-      - subst h'.
+      - subst h'. rewrite H3.
         eapply inv_array_reached_preserve;
-          eauto with f_equal; try lia; subst;
-          by length.
+          eauto with f_equal; try lia; subst; auto; by rewrite <- H3.
       - intros ?**. rewrite not_elem_of_app. split.
         + apply Hunreached. lia.
         + subst h'.
           rewrite elem_of_reverse.
           intros Hnin. subst.
           apply H1 in Hnin; try lia.
-          length in *. lia. }
+          length in *. rewrite <- H3 in Hnin. lia. }
   (* The post condition holds after iteration is complete. *)
-  + iIntros "(%h & ? & ? & % & %)". iApply "Hϕ".
+  + iIntros "(%h & ? & ? & ? & %)". iApply "Hϕ".
     iFrame. repeat iSplit; iPureIntro; auto.
-    - intro. apply H3. lia.
-    - pack; eauto; subst; by length.
+    - intro. apply H4. lia.
+    - pack; eauto; subst; by rewrite H3.
 Qed.
 
 Lemma iter_rev_spec h (f : val) m :
@@ -1059,7 +1139,7 @@ Proof.
   iIntros "%Helts S".
   destructHashtbl "S".
   unfold Hashtbl. iPack; eauto; iFrame.
-  iPack. 2: apply H0. all: eauto.
+  iPack. 1: apply H0. all: eauto.
   + unfold valid_buckets. intros.
     rewrite <- Helts. eauto.
   + by erewrite cardinality_extensionality.
@@ -1086,21 +1166,22 @@ Proof.
   wp_rec. destructHashtbl "S".
   subst h. wp_load.
   wp_apply (array٠size𑁒spec with "[Harray //]").
+  iPoseProof (Tbl_len vs tbl with "Htbl") as "[Htbl %]".
   iIntros "Harray". wp_pures. wp_apply (array٠make_spec).
   { iPureIntro. lia. }
   iIntros "%new_arr Hnew". wp_pures.
   wp_load.
-  wp_apply+ (iter_aux_spec _ _ m (resize_inv new_arr) with "[] [$Harray $Hnew] [H2 H3 Hϕ]").
-  - assert (n = len v). { lia. }
+  wp_apply+ (iter_aux_spec _ _ m (resize_inv new_arr) with "[] [$Harray $Hnew $Htbl] [H2 H3 Hϕ]").
+  - assert (n = len vs). { lia. }
     clear dependent tbl ϕ.
     iIntros "%kv %h1 %h2 !> %ϕ ((% & S & %) & % & %) Hϕ".
     destruct kv. wp_pures. wp_apply (add'_spec with "[$S]").
     iIntros. iApply "Hϕ".
     iFrame. auto.
     iPureIntro. intros. eapply resize_inv_step; subst; eauto.
-  - iPack.
-    1: apply replicate_model.
-    11: eauto. (* Try to find a way around this. *)
+  - iSplitL; iPack; try iFrame.
+    1: by iApply replicate_model.
+    10: eauto. (* Try to find a way around this. *)
     all: eauto.
     + length. lia.
     + intros ????. do 2 list in *. intro Helem.
@@ -1131,8 +1212,8 @@ Proof.
   iFrame. iPack. 5: eauto. all: eauto.
 Qed.
 
-Lemma hashtbl٠inc_pop_spec h l (arr : val) m (card : Z) :
-  {{{ ⌜ h = #l ⌝ ∗ l.[size] ↦ #card ∗ l.[buckets] ↦ arr ∗
+Lemma hashtbl٠inc_pop_spec h ℓ (arr : val) m (card : Z) :
+  {{{ ⌜ h = #ℓ ⌝ ∗ ℓ.[size] ↦ #card ∗ ℓ.[buckets] ↦ arr ∗
         HashtblArray arr m ∗
         ⌜ card = cardinality m - 1 ⌝ }}}
     hashtbl٠inc_pop h
@@ -1149,8 +1230,8 @@ Proof.
   wp_apply (array٠size𑁒spec with "[$Harray]") as "Harray".
   wp_pures. destruct bool_decide; wp_pures.
   unfold Hashtbl.
-  + wp_apply (resize_spec with "[H2 H3 Harray]").
-    { iFrame. iPack. 6:eauto. all: eauto. }
+  + wp_apply (resize_spec with "[H2 H3 $Harray $Htbl]").
+    { iFrame. iPack. all: eauto. }
     iSteps.
   + iStep. iFrame. iPack. pack. 6:eauto. all: eauto.
 Qed.
@@ -1164,7 +1245,7 @@ Proof.
   wp_rec. wp_pures. wp_load.
   wp_apply+ (add'_spec with "[$S]").
   iIntros "S". wp_pures.
-  wp_apply+ ((hashtbl٠inc_pop_spec _ l arr _) with "[Harr Hsize S]").
+  wp_apply+ ((hashtbl٠inc_pop_spec _ ℓ arr _) with "[$Harr $Hsize S]").
   { iStep. iFrame. erewrite cardinality_add; eauto.
     subst c.
     assert (A : cardinality m = cardinality m + 1 - 1). { lia. }

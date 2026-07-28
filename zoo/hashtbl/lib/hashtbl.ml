@@ -1,7 +1,13 @@
 let[@zoo.opaque] eq _ _ = assert false
 let[@zoo.opaque] hash _ = assert false
 
-type ('k, 'v) bucket = Nil | Cons of 'k * 'v * ('k, 'v) bucket
+type ('k, 'v) bucket =
+  | Nil
+  | Cons of {
+      mutable key : 'k;
+      mutable data : 'v;
+      mutable next : ('k, 'v) bucket;
+    }
 
 type ('k, 'v) tbl = {
   mutable buckets : ('k, 'v) bucket array;
@@ -16,14 +22,14 @@ let create (n : int) = { buckets = Array.make n Nil; size = 0 }
 let add' (arr : ('k, 'v) bucket array) (k : 'k) (v : 'v) =
   let n = Array.size arr in
   let i = index k n in
-  arr.(i) <- Cons (k, v, arr.(i))
+  arr.(i) <- Cons { key = k; data = v; next = arr.(i) }
 
 let rec bucket_iter_right (b : ('k, 'v) bucket) f : unit =
   match b with
   | Nil -> ()
-  | Cons (k, v, b') ->
-      bucket_iter_right b' f;
-      f k v
+  | Cons b ->
+      bucket_iter_right b.next f;
+      f b.key b.data
 
 let iter_aux (buckets : ('k, 'v) bucket array) f =
   for i = 0 to Array.size buckets - 1 do

@@ -26,16 +26,16 @@ Definition hashtbl٠add' : val :=
   fun: "arr" "k" "v" =>
     let: "n" := array٠size "arr" in
     let: "i" := hashtbl٠index "k" "n" in
-    array٠set "arr" "i" ‘Cons( "k", "v", array٠get "arr" "i" ).
+    array٠set "arr" "i" ‘Cons{ "k", "v", array٠get "arr" "i" }.
 
 Definition hashtbl٠bucket_iter_right : val :=
   rec: "bucket_iter_right" "b" "f" =>
     match: "b" with
     | Nil =>
         ()
-    | Cons "k" "v" "b'" =>
-        "bucket_iter_right" "b'" "f" ;;
-        "f" "k" "v"
+    | Cons <> <> <> as "b" =>
+        "bucket_iter_right" "b".{next} "f" ;;
+        "f" "b".{key} "b".{data}
     end.
 
 Definition hashtbl٠iter_aux : val :=
