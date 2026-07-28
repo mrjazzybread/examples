@@ -5,3 +5,8 @@
 *.vok
 *.vos
 *Makefile.coq*
+*.cmo
+*.cmt
+*.cmti
+_build
+.lia.cache
