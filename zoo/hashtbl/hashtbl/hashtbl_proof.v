@@ -1,5 +1,4 @@
 Require Export hashtbl__types hashtbl__code.
-From stdpp Require Import numbers list gmap.
 
 From zoo Require Import
   prelude.
@@ -766,23 +765,6 @@ Proof.
     subst. by rewrite H3.
 Qed.
 
-Definition FOLD {A}
-  (permitted : list A -> Prop)
-  (complete : list A -> Prop)
-  (init : val)
-  (body : val -> expr)
-  (loop : val -> A -> expr)
-  (S : iProp)
-  :=
-   ∀ inv,
-    (∀ (x : A) (h1 : list A) (h2 : list A) (acc : val),
-       {{{ inv h1 acc ∗ ⌜ h2 = h1 ++ [x] ⌝ ∗ ⌜ permitted h2 ⌝ }}}
-       loop acc x
-       {{{ acc', RET acc'; inv h2 acc' }}}) -∗
-  {{{ inv [] init ∗ ⌜ permitted [] ⌝ ∗ S }}}
-    body init
-  {{{ r, RET r; ∃ h, inv h r ∗ ⌜ complete h ⌝ ∗ S }}}.
-
 Definition ITER {A}
   (permitted : list A -> Prop)
   (complete : list A -> Prop)
@@ -807,7 +789,7 @@ Lemma bucket_iter_right_spec (_b : val) b (f : val) :
     (λ (x : K * val), let (k, v) := x in f (Key k) v).
 Proof.
   intros.
-  unfold ITER, FOLD.
+  unfold ITER.
   iIntros "%inv #f_spec".
   iModIntro.
   iInduction b as [|[k v] b] "IH" forall (_b); simpl in *;
@@ -994,7 +976,7 @@ Ltac rlist := auto with rlist.
 
 
 Ltac intro_iter :=
-  unfold ITER, FOLD;
+  unfold ITER;
   iIntros "%inv #f_spec !> %ϕ
            (Hinv & %Hpermitted & S) Hϕ".
 
@@ -1064,7 +1046,7 @@ Proof.
     (* The invariant is maintained while iterating over each bucket. *)
     { iIntros "!> (%h' & H1 & % & ?)".
       iSplit. 1: auto.
-      iDestruct ("Htbl" with "[$]") as "?". iFrame.
+      iDestruct ("Htbl" with "[$]") as "?".
       iDestruct ("H1" with "[//]") as "[H1 %]".
       iFrame. iSplit; iPureIntro.
       - subst h'. rewrite H3.
@@ -1229,11 +1211,8 @@ Proof.
   rewrite H1. wp_load.
   wp_apply (array٠size𑁒spec with "[$Harray]") as "Harray".
   wp_pures. destruct bool_decide; wp_pures.
-  unfold Hashtbl.
-  + wp_apply (resize_spec with "[H2 H3 $Harray $Htbl]").
-    { iFrame. iPack. all: eauto. }
-    iSteps.
-  + iStep. iFrame. iPack. pack. 6:eauto. all: eauto.
+  2: iSteps. unfold Hashtbl.
+  wp_apply (resize_spec with "[H2 H3 $Harray $Htbl]"); iSteps.
 Qed.
 
 Lemma hashtbl٠add_spec h m k v :
@@ -1246,10 +1225,8 @@ Proof.
   wp_apply+ (add'_spec with "[$S]").
   iIntros "S". wp_pures.
   wp_apply+ ((hashtbl٠inc_pop_spec _ ℓ arr _) with "[$Harr $Hsize S]").
-  { iStep. iFrame. erewrite cardinality_add; eauto.
-    subst c.
-    assert (A : cardinality m = cardinality m + 1 - 1). { lia. }
-    by rewrite <- A. }
+  { iSteps. erewrite cardinality_add; eauto.
+    subst c. iPureIntro. lia. }
   iApply "Hϕ".
 Qed.
 
