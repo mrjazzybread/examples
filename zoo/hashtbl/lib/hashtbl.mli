@@ -1,18 +1,17 @@
+(*@ open Fin_maps *)
+
 type ('k, 'v) t
-(*@ model : ('k, 'v sequence) fmap *)
+(*@ model : (val, val sequence) fin_map *)
 
-val eq : 'k -> 'k -> bool
-(*@ b = eq k1 k2
-    ensures b <-> k1 = k2 *)
-
-val create : int -> t
+val create : int -> ('k, 'v) t
 (*@ h = create n
     ensures h = ∅ *)
 
-val population : t -> int
+val population : ('k, 'v) t -> int
 (*@ n = population h
-    ensures n = cardinality h *)
+    ensures n = Fin_maps.population h *)
 
 val add : ('k, 'v) t -> 'k -> 'v -> unit
 (*@ add h k v
-    ensures h = <[k:= cons v (h !!! k)]> *)
+    modifies h
+    ensures h = add k (Sequence.cons v (old (h[k]))) (old h) *)

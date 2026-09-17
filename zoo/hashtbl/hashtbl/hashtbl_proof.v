@@ -1,3 +1,5 @@
+Require Import Gospel.iris.base.
+Require Import hashtbl_mli.
 Require Export hashtbl__types hashtbl__code.
 
 From zoo Require Import
@@ -19,22 +21,18 @@ Require Import iris.algebra.dfrac.
 From listz Require Import listz.
 Notation len := length.
 
-Section spec.
+Module Proofs (Heap : H) : hashtbl_mli.Obligations Heap.
 
-Context `{zoo_G : !ZooG Σ}.
+Module Declarations := Declarations Heap.
 
-Notation iProp := (iProp Σ).
+Import Declarations.
+Import Heap.
 
-(* For simplicity's sake, we assume that keys can be projected into
-   the logical level. *)
-Variable K : Type.
+(* Encoder for keys *)
+#[local] Parameter K : Type.
 Parameter Key : K -> val.
-(* Decidable equality over keys. *)
-Global Declare Instance EqK : EqDecision K.
-(* The type of keys is countably infinite. *)
-Global Declare Instance CoutntK : Countable K.
 
-Notation hmap := (gmap K (list val)).
+Notation hmap := (Stdlib.fin_map K (list val)).
 
 Definition bucket := (list (K * val)).
 
@@ -253,9 +251,10 @@ Hint Rewrite
   lookup_total_empty_list
   using done : cmap.
 
+Import Stdlib.Dummy_map.
 Hint Rewrite
-  (fin_maps.lookup_total_insert_ne (M:=gmap K) (A:=list val))
-  (fin_maps.lookup_total_insert_eq (M:=gmap K) (A:=list val))
+  (fin_maps.lookup_total_insert_ne (M:=fmap K) (A:=list val))
+  (fin_maps.lookup_total_insert_eq (M:=fmap K) (A:=list val))
   using done : cmap.
 
 Ltac hmap := autorewrite with cmap.
@@ -296,7 +295,7 @@ Definition cardinality (h : hmap) :=
   (map_fold (fun _ (v : list val) acc => acc + len v) 0 h)%Z.
 
 Lemma cardinality_empty :
-  cardinality ∅ = 0%Z.
+  cardinality ∅ = 0.
 Proof.
   apply map_fold_empty.
 Qed.
@@ -341,9 +340,10 @@ Lemma cardinality_delete_present_alt :
     m !! k = Some l ->
     cardinality (delete k m) = (n - len l)%Z.
 Proof.
+  simpl.
   intros. subst. unfold cardinality.
   erewrite map_fold_delete with (m:=m) (R:=eq); tc.
-  lia.
+  by rewrite Z.add_simpl_r.
 Qed.
 
 Lemma cardinality_insert :
@@ -352,7 +352,7 @@ Lemma cardinality_insert :
     cardinality (<[k:=l]>m) = (n + len l - len (m !!! k))%Z.
 Proof.
   intros m k l n H1.
-  destruct (decide (m !! k = None)).
+  destruct (decide (m !! k = Datatypes.None)).
   - hmap. erewrite cardinality_insert_fresh by auto.
     length. lia.
   - rewrite <- insert_delete_eq.
@@ -384,7 +384,8 @@ Lemma cardinality_empty_lists :
     cardinality m = 0%Z.
 Proof.
   intros m Hempty.
-  induction m as [|k v m Hnone Hfirst Ih] using map_first_key_ind. by hmap.
+  induction m as [|k v m Hnone Hfirst Ih] using map_first_key_ind.
+  unfold cardinality. by rewrite map_fold_empty.
   erewrite cardinality_insert.
   - hmap. list. specialize Hempty with k.
     rewrite fin_maps.lookup_total_insert_eq in Hempty.
@@ -561,7 +562,9 @@ Proof.
   - unfold no_garbage. intros ???? H3.
       do 2 list in *.
       by apply not_elem_of_nil in H3.
-  - intros ?**. do 2 list in *. by subst.
+  - intros ?**. do 2 list in *. rewrite lookup_total_empty.
+    by subst.
+  - symmetry. apply cardinality_empty.
 Qed.
 
 Lemma no_garbage_insert :
@@ -1229,5 +1232,3 @@ Proof.
     subst c. iPureIntro. lia. }
   iApply "Hϕ".
 Qed.
-
-End spec.

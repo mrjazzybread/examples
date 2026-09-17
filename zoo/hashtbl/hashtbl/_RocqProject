@@ -1,4 +1,5 @@
 -R . hashtbl
 hashtbl__code.v
 hashtbl__types.v
+hashtbl_mli.v
 hashtbl_proof.v
