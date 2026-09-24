@@ -28,13 +28,9 @@ Module Declarations := Declarations Heap.
 Import Declarations.
 Import Heap.
 
-(* Encoder for keys *)
-#[local] Parameter K : Type.
-Parameter Key : K -> val.
+Notation hmap := (fin_map val (list val)) (only parsing).
 
-Notation hmap := (Stdlib.fin_map K (list val)).
-
-Definition bucket := (list (K * val)).
+Definition bucket := (list (val * val)).
 
 Implicit Types ℓ : location.
 
@@ -43,11 +39,11 @@ Fixpoint Bucket (_b : val) (b : bucket) : iProp :=
   |[] => ⌜ _b = §Nil%V ⌝
   |cons x t =>
      let (k, v) := x in
-     ∃ ℓ _t, ⌜ _b = #ℓ ⌝ ∗ ℓ ↦ₕ Header §Cons 3 ∗ ℓ.[key] ↦ Key k ∗
+     ∃ ℓ _t, ⌜ _b = #ℓ ⌝ ∗ ℓ ↦ₕ Header §Cons 3 ∗ ℓ.[key] ↦ k ∗
           ℓ.[data] ↦ v ∗ ℓ.[next] ↦ _t ∗ Bucket _t t
   end.
 
-Fixpoint remove_assoc (k : K) (l : bucket) :=
+Fixpoint remove_assoc (k : val) (l : bucket) :=
   match l with
   |[] => []
   |(k', v) :: t =>
@@ -57,14 +53,14 @@ Fixpoint remove_assoc (k : K) (l : bucket) :=
        (k', v) :: remove_assoc k t
   end.
 
-Parameter hash : K -> Z.
+Parameter hash : val -> Z.
 
 Axiom hash_nonneg : ∀ k, hash k >= 0.
 
 Notation indexZ k len := (hash k mod len)%Z.
 
 Notation filter_key k l :=
-  (base.filter (fun (x: K * val) => let (k', _) := x in k' = k) l).
+  (base.filter (fun (x: val * val) => let (k', _) := x in k' = k) l).
 
 (* Lemmas for filtering association lists *)
 
@@ -111,7 +107,7 @@ Qed.
 (* [l' = remove_assoc_list k l] returns a list [l'] where the first
    binding of key [k] is removed.
    If no such binding exists then [l' = l]. *)
-Fixpoint remove_assoc_list (k : K) (l : bucket) :=
+Fixpoint remove_assoc_list (k : val) (l : bucket) :=
   match l with
   |[] => []
   |(k', v) :: t =>
@@ -169,12 +165,12 @@ Qed.
 
 Axiom hashtbl٠hash_spec : ∀ k,
   {{{ True }}}
-    hashtbl٠hash (Key k)
+    hashtbl٠hash k
   {{{ r, RET #r; ⌜ r = hash k ⌝ }}}.
 
 Lemma hashtbl٠index_spec k n:
   {{{ ⌜ n >= 0 ⌝ }}}
-    hashtbl٠index (Key k) #n
+    hashtbl٠index k #n
   {{{ r, RET #r; ⌜ r = indexZ k n ⌝ }}}.
 Proof.
   iIntros "%ϕ % Hϕ".
@@ -253,8 +249,8 @@ Hint Rewrite
 
 Import Stdlib.Dummy_map.
 Hint Rewrite
-  (fin_maps.lookup_total_insert_ne (M:=fmap K) (A:=list val))
-  (fin_maps.lookup_total_insert_eq (M:=fmap K) (A:=list val))
+  (fin_maps.lookup_total_insert_ne (M:=fmap val) (A:=list val))
+  (fin_maps.lookup_total_insert_eq (M:=fmap val) (A:=list val))
   using done : cmap.
 
 Ltac hmap := autorewrite with cmap.
@@ -265,7 +261,7 @@ Tactic Notation "hmap" "in" hyp(h) :=
 Tactic Notation "hmap" "in" "*" :=
   autorewrite with cmap in *.
 
-Definition _add (m : hmap) (k : K) (v : val) := <[k:= v :: m !!! k]> m.
+Definition _add (m : hmap) (k : val) (v : val) := <[k:= v :: m !!! k]> m.
 
 Lemma add_lookup_eq :
   forall m k v, _add m k v !!! k = v :: m !!! k.
@@ -285,17 +281,16 @@ Proof.
   by hmap.
 Qed.
 
-Definition rm (m : hmap) (k : K) :=
+Definition rm (m : hmap) (k : val) :=
   <[k:=tl (m !!! k)]> m.
 
-Definition rm_add (m : hmap) (k : K) (v : val) :=
+Definition rm_add (m : hmap) (k : val) (v : val) :=
   _add (rm m k) k v.
 
-Definition cardinality (h : hmap) :=
-  (map_fold (fun _ (v : list val) acc => acc + len v) 0 h)%Z.
+Notation cardinality := (cardinality (K:=val) (V:=val)).
 
 Lemma cardinality_empty :
-  cardinality ∅ = 0.
+ cardinality ∅ = 0.
 Proof.
   apply map_fold_empty.
 Qed.
@@ -306,10 +301,12 @@ Lemma cardinality_insert_fresh :
     m !! k = None ->
     cardinality (<[k:=l]>m) = (len l + n)%Z.
 Proof.
+  simpl.
   intros.
   subst n.
-  unfold cardinality.
+  unfold cardinality. simpl.
   rewrite map_fold_insert; eauto with lia.
+  rewrite Z.add_comm. f_equal.
 Qed.
 
 Lemma cardinality_nonneg :
@@ -330,7 +327,7 @@ Lemma cardinality_delete_present :
     m !! k = Some l ->
     (cardinality (delete k m) + len l)%Z = n.
 Proof.
-  intros. subst n. unfold cardinality.
+  intros. subst n. unfold cardinality. simpl.
   erewrite map_fold_delete with (m:=m); tc.
 Qed.
 
@@ -341,7 +338,7 @@ Lemma cardinality_delete_present_alt :
     cardinality (delete k m) = (n - len l)%Z.
 Proof.
   simpl.
-  intros. subst. unfold cardinality.
+  intros. subst. unfold cardinality. simpl.
   erewrite map_fold_delete with (m:=m) (R:=eq); tc.
   by rewrite Z.add_simpl_r.
 Qed.
@@ -385,7 +382,8 @@ Lemma cardinality_empty_lists :
 Proof.
   intros m Hempty.
   induction m as [|k v m Hnone Hfirst Ih] using map_first_key_ind.
-  unfold cardinality. by rewrite map_fold_empty.
+  unfold cardinality. simpl.
+  by rewrite map_fold_empty.
   erewrite cardinality_insert.
   - hmap. list. specialize Hempty with k.
     rewrite fin_maps.lookup_total_insert_eq in Hempty.
@@ -426,12 +424,13 @@ Lemma cardinality_rm :
     m !!! k ≠ [] ->
     cardinality (rm m k) = (n - 1)%Z.
 Proof.
-  intros.
+  simpl. intros.
   unfold rm.
   cinsert n.
   remember (m !!! k) as l eqn:E.
   destruct l. done.
-  subst. by length.
+  subst. simpl.
+  rewrite <- E. by length.
 Qed.
 
 Lemma cardinality_rm_add_empty :
@@ -468,7 +467,7 @@ Hint Rewrite
   cardinality_rm_add_empty
   using done : card.
 
-Implicit Types k : K.
+Implicit Types k : val.
 Implicit Types v : val.
 
 Lemma cardinality_extensionality :
@@ -516,6 +515,9 @@ Definition Hashtbl (h : val) (m : hmap) : iProp :=
     ⌜ h = #ℓ ⌝ ∗ ℓ.[buckets] ↦ arr ∗ HashtblArray arr m
   ∗ ℓ.[size] ↦ #c ∗ ⌜ c = cardinality m ⌝.
 
+Global Instance _T_inst : _T_sig :=
+  { T := Hashtbl }.
+
 Ltac iPack :=
   repeat (try iSplit; (try iExists _)); try iPureIntro.
 
@@ -542,23 +544,24 @@ Ltac pack :=
       eexists
   end.
 
-Lemma create_spec (n : Z) :
-    {{{ ⌜ 0 < n ⌝ }}}
-      hashtbl٠create #n
-    {{{ _h, RET _h; Hashtbl _h ∅}}}.
+Global Instance _create''_inst : _create''_sig :=
+  { create'' := hashtbl٠create }.
+
+#[refine] Global Instance _create''_spec_inst : _create''_spec_sig := { }.
 Proof.
-  iIntros "%ϕ %S Hϕ".
+  simpl.
+  iIntros "%n'' %n %ϕ (-> & %) Hϕ".
   wp_rec. wp_apply+ array٠make_spec.
   { iPureIntro. lia. }
   iIntros "%t A".
   wp_block l.
   iApply "Hϕ".
-  iUnfold Hashtbl;
+  iUnfold Hashtbl. iModIntro. iSplit. 1: auto.
   iExists l. do 2 iStep.
-  unfold HashtblArray. iModIntro.
+  unfold HashtblArray.
   iFrame. iPack; eauto.
   - by iApply replicate_model.
-  - by list.
+  - list. lia.
   - unfold no_garbage. intros ???? H3.
       do 2 list in *.
       by apply not_elem_of_nil in H3.
@@ -716,7 +719,7 @@ Lemma insert_Tbl vs tbl ℓ k v b i :
   ⌜ valid i vs ⌝ -∗
   ⌜ b = tbl !!! i ⌝ -∗
   Tbl vs tbl -∗
-  ℓ.[key] ↦ Key k -∗
+  ℓ.[key] ↦ k -∗
   ℓ.[data] ↦ v -∗
   ℓ.[next] ↦ (vs !!! i) -∗
   ℓ ↦ₕ Header §Cons 3 -∗
@@ -743,7 +746,7 @@ Qed.
 
 Lemma add'_spec h m k v :
      {{{ HashtblArray h m }}}
-       hashtbl٠add' h (Key k) v
+       hashtbl٠add' h k v
      {{{ RET (); HashtblArray h (_add m k v)}}}.
 Proof.
   iIntros "%ϕ S Hϕ".
@@ -789,7 +792,8 @@ Lemma bucket_iter_right_spec (_b : val) b (f : val) :
     (λ h, h = reverse b)
     (Bucket _b b)
     (hashtbl٠bucket_iter_right _b f)
-    (λ (x : K * val), let (k, v) := x in f (Key k) v).
+    (λ (x : val * val),
+      let (k, v) := x in f k v).
 Proof.
   intros.
   unfold ITER.
@@ -824,7 +828,7 @@ Proof.
       rewrite reverse_cons. by subst.
 Qed.
 
-Definition complete_key (k : K) (xs : hmap) (history : list (K * val)) :=
+Definition complete_key (k : val) (xs : hmap) (history : list (val * val)) :=
   map snd (filter_key k history) = reverse (xs !!! k).
 
 Definition complete xs h := ∀ k, complete_key k xs h.
@@ -838,7 +842,7 @@ Definition inv_array_reached n m :=
              indexZ k n < i → complete_key k m h).
 
 Definition inv_array_unreached n (m : hmap) :=
-  λ (h : list (K * val)) (i : Z),
+  λ (h : list (val * val)) (i : Z),
     (forall k v,
         indexZ k n >= i → (k, v) ∉ h).
 
@@ -934,7 +938,7 @@ Qed.
 Lemma permitted_start_next :
   ∀ n j h m,
   (∀ k v, indexZ k n >= j → (k, v) ∉ h) →
-  (∀ k : K, indexZ k n < j → complete_key k m h) →
+  (∀ k, indexZ k n < j → complete_key k m h) →
   permitted m h.
 Proof.
   intros n j h m H1 H2 k.
@@ -991,7 +995,7 @@ Lemma iter_aux_spec (arr f : val) (m : hmap) :
     (complete m)
     (HashtblArray arr m)
     (hashtbl٠iter_aux arr f)
-    (λ x, let (k, v) := x in f (Key k) v).
+    (λ x, let (k, v) := x in f k v).
 Proof.
   intro_iter.
   wp_rec. wp_pures.
@@ -1074,7 +1078,7 @@ Lemma iter_rev_spec h (f : val) m :
     (complete m)
     (Hashtbl h m)
     (hashtbl٠iter_rev h f)
-    (λ x, let (k, v) := x in f (Key k) v).
+    (λ x, let (k, v) := x in f k v).
 Proof.
   unfold ITER.
   iIntros "%inv #f_spec !> %ϕ
@@ -1088,7 +1092,7 @@ Proof.
 Qed.
 
 (* Invariant for [resize] *)
-Definition resize_inv new_arr (h : list (K * val)) : iProp :=
+Definition resize_inv new_arr (h : list (val * val)) : iProp :=
   ∃ m,
     HashtblArray new_arr m ∗
       ⌜ ∀ k, map snd (filter_key k h) = reverse (m !!! k) ⌝.
@@ -1096,7 +1100,7 @@ Definition resize_inv new_arr (h : list (K * val)) : iProp :=
 Ltac eq_decide v1 v2 := destruct (decide (v1 = v2)).
 
 Lemma resize_inv_step :
-  forall k v k' (l : list (K * val)) b x,
+  forall k v k' (l : list (val * val)) b x,
     (∀ k, map snd (filter_key k b) = reverse (x !!! k)) ->
     l = (filter_key k' (b ++ [(k, v)])) ->
     map snd l = reverse (_add x k v !!! k').
@@ -1178,7 +1182,7 @@ Proof.
     + intro. filter. apply prefix_nil.
   - iIntros "!> (% & (%m' & ? & %) & %Hcomplete & ?)".
     wp_store. iStep.
-    assert (A : ∀ k : K, m !!! k = m' !!! k).
+    assert (A : ∀ k, m !!! k = m' !!! k).
     { intro k. apply reverse_injective.
       by rewrite <- Hcomplete. }
     iApply (hashtbl_extensionality _ m' m); auto.
@@ -1218,17 +1222,37 @@ Proof.
   wp_apply (resize_spec with "[H2 H3 $Harray $Htbl]"); iSteps.
 Qed.
 
-Lemma hashtbl٠add_spec h m k v :
-  {{{ Hashtbl h m }}}
-    hashtbl٠add h (Key k) v
-  {{{ RET (); Hashtbl h (_add m k v) }}}.
+Global Instance _add''_inst : _add''_sig :=
+  { add'' := hashtbl٠add }.
+
+#[refine] Global Instance _add''_spec_inst : _add''_spec_sig := { }.
 Proof.
-  iIntros "%ϕ (% & % & % & % & Harr & S & Hsize & %) Hϕ". subst h.
+  simpl.
+  iIntros "% % % % % % %ϕ (S & -> & ->) Hϕ".
+  iDestruct "S" as
+    "(% & % & % & -> & Harr & S & Hsize & %)".
   wp_rec. wp_pures. wp_load.
   wp_apply+ (add'_spec with "[$S]").
   iIntros "S". wp_pures.
   wp_apply+ ((hashtbl٠inc_pop_spec _ ℓ arr _) with "[$Harr $Hsize S]").
   { iSteps. erewrite cardinality_add; eauto.
     subst c. iPureIntro. lia. }
-  iApply "Hϕ".
+  iIntros. iApply "Hϕ".
+  by iFrame.
 Qed.
+
+Global Instance _population''_inst : _population''_sig :=
+  { population'' := hashtbl٠population }.
+
+#[refine] Global Instance _population''_spec_inst : _population''_spec_sig := { }.
+Proof.
+  simpl.
+  iIntros "% % %ϕ S Hϕ".
+  destructHashtbl "S".
+  wp_rec. subst h''. wp_load. iModIntro.
+  iSpecialize ("Hϕ" $! #card). iApply "Hϕ".
+  iFrame. iPack. 5: eauto. all: eauto.
+  by subst.
+Qed.
+
+End Proofs.
