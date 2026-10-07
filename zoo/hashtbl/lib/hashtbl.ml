@@ -55,3 +55,13 @@ let inc_pop (h : ('k, 'v) tbl) =
 let add (h : ('k, 'v) tbl) (k : 'k) (v : 'v) =
   add' h.buckets k v;
   inc_pop h
+
+let rec find_bucket (b : ('k, 'v) bucket) (k : 'k) : 'v =
+  match b with
+  | Nil -> raise Not_found
+  | Cons x -> if eq x.key k then x.data else find_bucket x.next k
+
+let find (h : ('k, 'v) tbl) (k : 'k) =
+  let arr = h.buckets in
+  let b = arr.(index k (Array.size arr)) in
+  find_bucket b k
