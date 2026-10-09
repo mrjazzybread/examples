@@ -5,6 +5,8 @@ From zoo.language Require Import
   notations.
 From zoo_std Require Import
   array.
+From zoo_std Require Import
+  diverge.
 From hashtbl Require Import
   hashtbl__types.
 From zoo Require Import
@@ -74,3 +76,22 @@ Definition hashtbl٠add : val :=
   fun: "h" "k" "v" =>
     hashtbl٠add' "h".{buckets} "k" "v" ;;
     hashtbl٠inc_pop "h".
+
+Definition hashtbl٠find_bucket : val :=
+  rec: "find_bucket" "b" "k" =>
+    match: "b" with
+    | Nil =>
+        diverge ()
+    | Cons <> <> <> as "x" =>
+        if: hashtbl٠eq "x".{key} "k" then (
+          "x".{data}
+        ) else (
+          "find_bucket" "x".{next} "k"
+        )
+    end.
+
+Definition hashtbl٠find : val :=
+  fun: "h" "k" =>
+    let: "arr" := "h".{buckets} in
+    let: "b" := array٠get "arr" (hashtbl٠index "k" (array٠size "arr")) in
+    hashtbl٠find_bucket "b" "k".

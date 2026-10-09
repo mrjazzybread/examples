@@ -8,12 +8,17 @@ val create : int -> ('k, 'v) t
     requires n > 0
     ensures h = ∅ *)
 
+(*@ function ([_]) (m : ('k, 'v sequence) fin_map) (k : 'k) : 'v sequence =
+      if lookup m k = None then Sequence.empty else m[k] *)
+
 val add : ('k, 'v) t -> 'k -> 'v -> unit
 (*@ add h k v
     consumes k
     consumes v
     modifies h @ ('K, 'V) T
-    ensures h = old (add k (Sequence.cons v (h[k])) h) *)
+    ensures
+      let b = old (Sequence.cons v h[k]) in
+      h = old (add k b h) *)
 
 val find : ('k, 'v) t -> 'k -> 'v
 (*@ v = find h k

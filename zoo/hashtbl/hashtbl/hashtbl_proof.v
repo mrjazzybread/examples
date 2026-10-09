@@ -657,7 +657,8 @@ Lemma drop_cons A (x : A) l i :
 Proof.
   unfold drop. case_decide; try lia.
   intro. rewrite decide_False; try lia.
-  assert (Hs: ₊(i + 1) = S ₊i). { lia. }.
+  assert (Hs: ₊(i + 1) = S ₊i).
+  { lia. }
   rewrite Hs. by rewrite skipn_cons.
 Qed.
 
@@ -669,7 +670,6 @@ Proof.
   intros H ?.
   unfold drop in H.
   destruct decide; try lia.
-  Search list.drop nil.
   apply drop_nil_inv in H.
   unfold len. lia.
 Qed.
@@ -1249,6 +1249,8 @@ Proof.
     iApply (hashtbl_extensionality _ m' m); auto.
     do 2 iStep. iFrame. by erewrite cardinality_extensionality.
 Qed.
+
+
 
 End spec.
 
