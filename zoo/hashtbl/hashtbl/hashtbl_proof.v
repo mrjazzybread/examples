@@ -651,6 +651,66 @@ Proof.
       simpl. iFrame. iExists _. iSplit; eauto. by iStep.
 Qed.
 
+Lemma drop_cons A (x : A) l i :
+  i >= 0 ->
+  drop (i + 1) (x::l) = drop i l.
+Proof.
+  unfold drop. case_decide; try lia.
+  intro. rewrite decide_False; try lia.
+  assert (Hs: ₊(i + 1) = S ₊i). { lia. }.
+  rewrite Hs. by rewrite skipn_cons.
+Qed.
+
+Lemma drop_ge_nil A n (l : list A) :
+  drop n l = [] ->
+  n > 0 ->
+  n >= len l.
+Proof.
+  intros H ?.
+  unfold drop in H.
+  destruct decide; try lia.
+  Search list.drop nil.
+  apply drop_nil_inv in H.
+  unfold len. lia.
+Qed.
+
+Lemma Tbl_remove i n _tbl tbl :
+  ⌜ Z.to_nat i = n ⌝ -∗
+  ⌜ i >= 0 ⌝ -∗
+  ⌜ i < len _tbl ⌝ -∗
+  Tbl (drop i _tbl) (drop i tbl) -∗
+  Bucket (_tbl !!! i) (tbl !!! i) ∗
+    Tbl (drop (i + 1) _tbl) (drop (i + 1) tbl).
+Proof.
+  iInduction n as [|n' Ih] forall (i tbl _tbl);
+  iIntros "% % % Htbl".
+  - assert (i = 0). { lia. } subst i.
+    do 2 rewrite drop_none. destruct tbl.
+    + simpl. iDestruct "Htbl" as "%". subst.
+      by length in *.
+    + simpl.
+      iDestruct "Htbl" as "(%_b & %xs & -> & ? & ?)".
+      iFrame.
+  - assert (Hi: i = i - 1 + 1). lia.
+    destruct tbl.
+    + rewrite lookup_total_nil. destruct _tbl.
+      { by do 2 rewrite drop_nil. }
+      { do 2 rewrite drop_nil. simpl.
+        iDestruct "Htbl" as "%".
+        rewrite drop_cons; try lia.
+        apply drop_ge_nil in H2; lia.
+      }
+    + destruct _tbl.
+      { length in *. lia. }
+      { do 2 (rewrite lookup_total_cons_ne_0; try lia).
+        do 2 (rewrite drop_cons; try lia).
+        rewrite{5 6} Hi.
+        iApply "Ih"; try (iPureIntro; length in *; lia).
+        rewrite{1 2} Hi.
+        by do 2 (rewrite drop_cons; try lia).
+      }
+Qed.
+
 Lemma listz_insert_cons_r {A} (i : Z) l (x : A) y:
   (0 < i) → <[i:=x]> (y :: l) = y :: <[(i - 1):=x]> l.
 Proof.
@@ -807,7 +867,7 @@ Definition inv_array_unreached n (m : hmap) :=
 Definition inv_array inv arr (l : list val) tbl m (_ : Z) i : iProp :=
   ∃ h, inv h ∗
          array_model arr (DfracOwn 1) l ∗
-         Tbl l tbl ∗
+         Tbl (drop i l) (drop i tbl) ∗
          ⌜ inv_array_reached (len l) m h i ⌝ ∗
          ⌜ inv_array_unreached (len l) m h i ⌝.
 
@@ -991,10 +1051,14 @@ Proof.
          [Harray], the ownership of the array. *)
     (* We apply [bucket_iter_right_spec] with the model of the bucket
        we are iterating over and the proper invariant. *)
-    iDestruct (Tbl_peek vs tbl (tbl !!! i) i with "[$] [//] [//]")
-      as "[B Htbl]".
+    iDestruct (Tbl_remove i (Z.to_nat i) vs tbl with "[//] [] [] [Htbl]") as "[B Htbl]".
+    { iPureIntro. lia. }
+    { iPureIntro. lia. }
+    { assert (Hi:i = ⁺δ). lia. by rewrite Hi. }
     iApply (bucket_iter_right_spec _
-              (tbl !!! i) _ (inv_bucket m h inv) with "[] [Hinv B] [Harray Htbl]").
+              (tbl !!! i) _
+              (inv_bucket m h inv)
+             with "[] [Hinv B] [Harray Htbl]").
     (* The correctness of the triple *)
     { iIntros "**!>%ϕ'".
       destruct _x.
@@ -1032,24 +1096,24 @@ Proof.
       iSplit. 1: auto.
       iDestruct ("H1" with "[//]") as "[H1 %]".
       iFrame. iNext.
-  (*     iDestruct ("Htbl" with "[$]") as "?". *)
-  (*     iFrame. iSplit; iPureIntro. *)
-  (*     - subst h'. rewrite H3. *)
-  (*       eapply inv_array_reached_preserve; *)
-  (*         eauto with f_equal; try lia; subst; auto; by rewrite <- H3. *)
-  (*     - intros ?**. rewrite not_elem_of_app. split. *)
-  (*       + apply Hunreached. lia. *)
-  (*       + subst h'. *)
-  (*         rewrite elem_of_reverse. *)
-  (*         intros Hnin. subst. *)
-  (*         apply H1 in Hnin; try lia. *)
-  (*         length in *. rewrite <- H3 in Hnin. lia. } *)
-  (* (* The post condition holds after iteration is complete. *) *)
-  (* + iIntros "(%h & ? & ? & ? & %)". iApply "Hϕ". *)
-  (*   iFrame. repeat iSplit; iPureIntro; auto. *)
-  (*   - intro. apply H4. lia. *)
-  (*   - pack; eauto; subst; by rewrite H3. *)
-Admitted.
+      assert (Hi : i + 1 = ⁺(S δ)). lia.
+      rewrite Hi.
+      iFrame. iSplit; iPureIntro.
+      - subst h'. rewrite H3.
+        eapply inv_array_reached_preserve;
+          eauto with f_equal; try lia; subst; auto; by rewrite <- H3.
+      - intros ?**. rewrite not_elem_of_app. split.
+        + apply Hunreached. lia.
+        + subst h'.
+          rewrite elem_of_reverse.
+          intros Hnin. subst.
+          apply H1 in Hnin; try lia.
+          length in *. rewrite <- H3 in Hnin. lia. }
+  (* The post condition holds after iteration is complete. *)
+  + iIntros "(%h & ? & ? & ? & %)". iApply "Hϕ".
+    iFrame. repeat iSplit; iPureIntro; auto.
+    intro. apply H4. lia.
+Qed.
 
 Lemma iter_rev_spec h (f : val) m :
   ITER (permitted m)
